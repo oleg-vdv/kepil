@@ -233,6 +233,11 @@ def agent_status(request: Request) -> Response:
     return Response(redirect="/agents")
 
 
+def agent_reissue(request: Request) -> Response:
+    agents.reissue(request.query["id"])
+    return Response(redirect="/agents")
+
+
 def journal_view(request: Request) -> Response:
     journal = Journal(orders.journal_path())
     records = list(journal)
@@ -348,6 +353,7 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("POST", "/professions/<id>/delete", profession_delete),
     ("GET", "/agents", agents_list),
     ("POST", "/agents/<id>/status", agent_status),
+    ("POST", "/agents/<id>/reissue", agent_reissue),
     ("GET", "/meter", meter_view),
     ("GET", "/compliance", compliance_index),
     ("GET", "/compliance/<id>", compliance_view),

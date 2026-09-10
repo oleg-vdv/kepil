@@ -127,3 +127,27 @@ def test_admin_pages_render():
         response = handler(Request("/", {}, {}))
         assert response.status == 200
         assert "Kepil" in response.body
+
+
+def test_reissue_creates_a_new_version_and_retires_the_old():
+    order = make_order()
+    store.save_settings({"name": "ТОО «Настоящее»", "bin": "210987654321",
+                         "operator": "Олег"})
+    issued = store.reissue(order.agent_id)
+
+    assert issued["agent_id"] == "kepil.leads.v2"
+    assert issued["operated_by"]["bin"] == "210987654321"
+    assert store.get(order.agent_id)["status"] == "retired"
+    assert store.latest_for("leads")["agent_id"] == "kepil.leads.v2"
+
+
+def test_new_orders_go_to_the_latest_passport():
+    make_order()
+    store.reissue("kepil.leads.v1")
+    assert make_order().agent_id == "kepil.leads.v2"
+
+
+def test_old_orders_keep_their_agent():
+    old = make_order()
+    store.reissue(old.agent_id)
+    assert orders.get(old.id).agent_id == "kepil.leads.v1"

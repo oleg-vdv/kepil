@@ -55,14 +55,50 @@ def issue(passport: AgentPassport) -> dict[str, Any]:
     return payload
 
 
+def _major(agent_id: str) -> int:
+    tail = agent_id.rsplit(".v", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def latest_for(profession_id: str) -> dict[str, Any] | None:
+    """Действующий паспорт профессии — самой свежей версии."""
+    candidates = [p for p in all_passports()
+                  if p["agent_id"].split(".")[1] == profession_id
+                  and p.get("status") == "active"]
+    return max(candidates, key=lambda p: _major(p["agent_id"])) if candidates else None
+
+
 def ensure_for(profession) -> dict[str, Any]:
     """Возвращает действующий паспорт профессии, выпуская его при первом заказе."""
-    org = settings()
-    passport = profession.passport({"bin": org["bin"], "name": org["name"]})
-    existing = get(passport.agent_id)
+    existing = latest_for(profession.id)
     if existing:
         return existing
-    return issue(passport)
+    org = settings()
+    return issue(profession.passport({"bin": org["bin"], "name": org["name"]}))
+
+
+def reissue(agent_id: str) -> dict[str, Any]:
+    """Выпускает следующую версию паспорта с текущими настройками организации.
+
+    Паспорт неизменяем, поэтому «обновить» его нельзя: выпускается новая версия,
+    предыдущая переводится в статус «выведен» и остаётся в реестре навсегда.
+    Так история не теряется, а новые заказы идут на актуальные данные.
+    """
+    from ..professions import Profession, get as get_definition
+
+    previous = get(agent_id)
+    if previous is None:
+        raise KeyError(f"паспорт '{agent_id}' не найден")
+
+    profession_id = agent_id.split(".")[1]
+    profession = Profession(get_definition(profession_id))
+    org = settings()
+    version = f"{_major(agent_id) + 1}.0.0"
+    passport = profession.passport({"bin": org["bin"], "name": org["name"]},
+                                   version=version)
+    issued = issue(passport)
+    set_status(agent_id, "retired")
+    return issued
 
 
 def set_status(agent_id: str, status: str) -> dict[str, Any]:

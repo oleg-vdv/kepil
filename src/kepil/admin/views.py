@@ -423,6 +423,8 @@ def agents_page(passports) -> str:
           <form class="inline" method="post" action="/agents/{e(p["agent_id"])}/status">
             <input type="hidden" name="status" value="{'suspended' if status == 'active' else 'active'}">
             <button>{'Приостановить' if status == 'active' else 'Включить'}</button></form>
+          <form class="inline" method="post" action="/agents/{e(p["agent_id"])}/reissue">
+            <button>Перевыпустить</button></form>
           <form class="inline" method="post" action="/agents/{e(p["agent_id"])}/status">
             <input type="hidden" name="status" value="retired">
             <button class="danger">Вывести</button></form>
@@ -433,7 +435,9 @@ def agents_page(passports) -> str:
     return f"""
 <h1>Агенты</h1>
 <p class="lede">Паспорт неизменяем: правится только статус. Приостановка
-  действует немедленно — шлюз перестаёт пропускать любые действия (ст. 18 п. 2).</p>
+  действует немедленно — шлюз перестаёт пропускать любые действия (ст. 18 п. 2).
+  «Перевыпустить» выпускает следующую версию с текущими данными организации,
+  предыдущая выводится и остаётся в реестре.</p>
 <div class="grid g2">{cards}</div>
 """
 
@@ -466,7 +470,9 @@ def settings_page(org, data_path) -> str:
     return f"""
 <h1>Настройки</h1>
 <p class="lede">Организация-оператор: она указывается в паспортах агентов как
-  владелец системы и несёт ответственность по ст. 15.</p>
+  владелец системы и несёт ответственность по ст. 15. Уже выпущенные паспорта
+  сохраняют прежние данные — после изменения перевыпустите их на странице
+  «Агенты».</p>
 <form method="post" action="/settings">
   <div class="cols">
     <div><label>Название</label><input type="text" name="name" value="{e(org["name"])}" required></div>
