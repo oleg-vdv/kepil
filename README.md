@@ -29,6 +29,36 @@
 | `compliance` | Комплект по приказу № 95/НҚ, классификация, маркировка по ст. 21 | скелет |
 | `professions` | Сценарии профессий: тендерный пакет, СНТ/ЭСФ, ПТО, декларация | tender: скелет |
 
+## Как это выглядит
+
+```bash
+python examples/demo_order.py
+```
+
+Сквозной сценарий одного заказа: паспорт агента, мандат, восемь шагов через
+шлюз и журнал. Показывает три исхода — разрешено, отказано, ждёт человека:
+
+```
+  [+] assemble_package       generate:document → storage.kepil.kz
+  [x] sign_attempt           sign:document → storage.kepil.kz
+      действие 'sign:document' не разрешено мандатом
+  [x] leak_attempt           read:goszakup → evil.example.com
+      действие 'read:goszakup' не разрешено мандатом для системы 'evil.example.com'
+  [?] handover_to_client     send:package → storage.kepil.kz
+      необратимое действие: требуется подтверждение человека
+  [x] extra_parsing          read:goszakup → goszakup.gov.kz
+      лимит 'llm_cost_kzt' исчерпан: предел 100, запрошено ещё 40.0
+```
+
+Полученный журнал проверяется независимым инструментом — и ловит подделку:
+
+```bash
+npx @proofbyte/agent-trace verify journal/demo.jsonl
+# Целостность подтверждена. Записей: 8
+# ...после правки одной записи:
+# Целостность НАРУШЕНА. Запись 4: содержимое записи изменено после подписания
+```
+
 ## Что переиспользуется
 
 - [AI-Gateway](https://github.com/oleg-vdv/AI-Gateway) — шлюз обращений к моделям,
