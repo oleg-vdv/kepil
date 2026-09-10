@@ -7,11 +7,14 @@ from .service import (
     get,
     journal_path,
     list_orders,
+    resume,
+    rollback,
     run_next,
+    stop,
     verify_journal,
 )
 
 __all__ = [
     "Order", "create", "get", "list_orders", "run_next", "confirm",
-    "verify_journal", "journal_path",
+    "stop", "resume", "rollback", "verify_journal", "journal_path",
 ]

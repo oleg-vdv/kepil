@@ -19,6 +19,8 @@ NAV = [
     ("/orders", "Заказы", "orders"),
     ("/professions", "Профессии", "professions"),
     ("/agents", "Агенты", "agents"),
+    ("/meter", "Счётчик", "meter"),
+    ("/compliance", "Комплаенс", "compliance"),
     ("/journal", "Журнал", "journal"),
     ("/settings", "Настройки", "settings"),
 ]
@@ -151,7 +153,7 @@ def orders_page(orders, professions) -> str:
 """
 
 
-def order_page(order, definition, journal_rows) -> str:
+def order_page(order, definition, journal_rows, message: str = "") -> str:
     steps = []
     for row in order.steps_view():
         step, decision = row["step"], row["decision"]
@@ -191,6 +193,36 @@ def order_page(order, definition, journal_rows) -> str:
                    f'{"Все шаги пройдены." if done else "Очередь пуста — агент работает сам."}'
                    f'</p></div>')
 
+    if order.status == "stopped":
+        stop_button = (f'<form class="inline" method="post" '
+                       f'action="/orders/{e(order.id)}/resume">'
+                       f'<button>Вернуть в работу</button></form>')
+    else:
+        stop_button = (f'<form class="inline" method="post" '
+                       f'action="/orders/{e(order.id)}/stop">'
+                       f'<input type="hidden" name="reason" value="остановлено оператором">'
+                       f'<button class="danger">Остановить</button></form>')
+
+    done_rows = [r for r in order.results
+                 if r["decision"] == "allow" and not r.get("rolled_back")]
+    if done_rows:
+        options = "".join(f'<option value="{e(r["step"])}">{e(r["title"])}</option>'
+                          for r in done_rows)
+        rollback_block = f"""
+    <h2>Откат выполненного шага</h2>
+    <div class="card">
+      <p>Компенсирующее действие берётся из описания профессии. Шаги, для которых
+        компенсация не описана, необратимы — панель так и скажет.</p>
+      <form method="post" action="/orders/{e(order.id)}/rollback">
+        <div class="cols"><div><label>Шаг</label>
+          <select name="step">{options}</select></div></div>
+        <div class="row"><button>Откатить</button></div>
+      </form>
+      {f'<div class="msg ok">{e(message)}</div>' if message else ''}
+    </div>"""
+    else:
+        rollback_block = ""
+
     limits = "".join(
         f'<dt>{e(key)}</dt><dd>{order.spent(key):g} из {value:g}'
         f'<div class="meter"><i style="width:{min(100, int(order.spent(key) / value * 100)) if value else 0}%"></i></div></dd>'
@@ -210,7 +242,9 @@ def order_page(order, definition, journal_rows) -> str:
           Выполнить следующий шаг</button></form>
       <form class="inline" method="post" action="/orders/{e(order.id)}/reset">
         <button>Начать заново</button></form>
+      {stop_button}
     </div>
+    {rollback_block}
   </div>
   <div>
     <h2>Подтверждение</h2>
@@ -342,8 +376,15 @@ def profession_form(p: ProfessionDefinition, problems: list[str] | None = None) 
   <label>Откат<span class="hint">действие = что делаем для отмены; пустое значение означает «откат невозможен»</span></label>
   <textarea name="rollback" rows="4">{pairs(p.rollback)}</textarea>
 
-  <label>Что получает клиент</label>
-  <input type="text" name="deliverable" value="{e(p.deliverable)}">
+  <div class="cols">
+    <div><label>Что получает клиент</label>
+      <input type="text" name="deliverable" value="{e(p.deliverable)}"></div>
+    <div><label>Норматив ручной работы, минут
+        <span class="hint">сколько тот же заказ занимает у человека; нужен счётчику,
+        чтобы не выдумывать экономию</span></label>
+      <input type="number" name="human_baseline_minutes" min="0" step="5"
+             value="{p.human_baseline_minutes:g}"></div>
+  </div>
 
   <div class="row">
     <button class="primary">Сохранить</button>
@@ -397,7 +438,7 @@ def agents_page(passports) -> str:
 """
 
 
-def journal_page(records, state, entries) -> str:
+def journal_page(records, state, entries, anchors="") -> str:
     ok, err = state
     verdict = (f'<div class="msg ok">Целостность подтверждена. Записей: {entries}</div>'
                if ok else f'<div class="msg err">Целостность НАРУШЕНА — {e(err)}</div>')
@@ -412,6 +453,12 @@ def journal_page(records, state, entries) -> str:
 </div>
 <h2>Последние записи</h2>
 {journal_table(records)}
+<h2>Зафиксированные корни</h2>
+<div class="row" style="margin-top:0">
+  <form class="inline" method="post" action="/journal/anchor">
+    <button>Зафиксировать корень</button></form>
+</div>
+{anchors}
 """
 
 
@@ -435,3 +482,119 @@ def settings_page(org, data_path) -> str:
   <dt>Что внутри</dt><dd>заказы, паспорта, профессии, журнал — обычные JSON-файлы</dd>
 </dl></div>
 """
+
+
+# --- счётчик ----------------------------------------------------------------
+
+def _counter_row(name: str, c) -> str:
+    saved = c.saved_minutes
+    saved_text = f"{saved / 60:.1f} ч" if saved is not None else "—"
+    return (f'<tr><td>{e(name)}</td>'
+            f'<td class="mono">{c.actions}</td>'
+            f'<td class="mono">{c.denied}</td>'
+            f'<td class="mono">{c.confirmations + c.returns}</td>'
+            f'<td class="mono">{c.tokens or "—"}</td>'
+            f'<td class="mono">{c.cost_kzt:.1f} ₸</td>'
+            f'<td class="mono">{c.autonomy_share * 100:.0f} %</td>'
+            f'<td class="mono">{saved_text}</td></tr>')
+
+
+def meter_page(total, by_profession, by_agent, professions) -> str:
+    saved = total.saved_minutes
+    head = ('<tr><th>Разрез</th><th>Действий</th><th>Отказов</th><th>Решений человека</th>'
+            '<th>Токенов</th><th>Стоимость</th><th>Без человека</th>'
+            '<th>Замещено</th></tr>')
+    prof_rows = "".join(
+        _counter_row(professions[k].name if k in professions else k, v)
+        for k, v in by_profession.items())
+    agent_rows = "".join(_counter_row(k, v) for k, v in by_agent.items())
+    return f"""
+<h1>Счётчик</h1>
+<p class="lede">Считается по журналу, а не по отдельной базе: цифры и
+  доказательства происходят из одного источника.</p>
+<div class="grid g3">
+  <div class="card tile"><div class="n">{total.actions}</div><div class="l">действий всего</div></div>
+  <div class="card tile"><div class="n">{total.cost_kzt:.0f} ₸</div><div class="l">на обращения к моделям</div></div>
+  <div class="card tile"><div class="n">{total.autonomy_share * 100:.0f} %</div><div class="l">прошло без человека</div></div>
+  <div class="card tile"><div class="n">{f"{saved / 60:.1f} ч" if saved is not None else "—"}</div>
+    <div class="l">замещённого времени</div></div>
+</div>
+<h2>По профессиям</h2>
+{f'<table>{head}{prof_rows}</table>' if prof_rows else '<div class="empty">Данных пока нет.</div>'}
+<h2>По агентам</h2>
+{f'<table>{head}{agent_rows}</table>' if agent_rows else '<div class="empty">Данных пока нет.</div>'}
+<h2>Как читать</h2>
+<div class="card">
+  <p><b>Без человека</b> — доля обратимых действий, прошедших шлюз без остановки.
+    Растёт по мере того, как профессия отлаживается.</p>
+  <p><b>Замещено</b> — норматив ручной работы из профессии за завершённые заказы
+    минус время, которое человек всё-таки потратил на подтверждения. Если норматив
+    не заполнен, стоит прочерк: выдумывать экономию нельзя.</p>
+  <p><b>Токенов</b> и <b>стоимость</b> — те самые величины, которые обсуждаются в
+    мире как база возможного налога на ИИ. Отдельный отчёт для этого не понадобится.</p>
+</div>
+"""
+
+
+# --- комплаенс --------------------------------------------------------------
+
+def compliance_index(items) -> str:
+    if not items:
+        return ('<h1>Комплаенс</h1><p class="lede">Комплект документации '
+                'собирается по выпущенному паспорту агента.</p>'
+                '<div class="empty">Сначала создайте заказ — паспорт выпустится сам.</div>')
+    cards = "".join(f"""
+      <div class="card">
+        <h3 class="mono">{e(item["agent_id"])}</h3>
+        <p>{e(item["profession_name"])} · риск: {e(item["risk_class"])}</p>
+        <dl class="kv">
+          <dt>Обязательных документов</dt><dd>{item["required"]}</dd>
+          <dt>Всего в комплекте</dt><dd>{item["total"]}</dd>
+          <dt>Мест для человека</dt><dd>{item["todo"]}</dd>
+        </dl>
+        <div class="row">
+          <a href="/compliance/{e(item["agent_id"])}"><button>Открыть комплект</button></a>
+        </div>
+      </div>""" for item in items)
+    return f"""
+<h1>Комплаенс</h1>
+<p class="lede">Приказ № 95/НҚ от 25.02.2026: состав документации зависит от
+  степени риска. Документы собираются из паспорта, описания профессии и журнала.</p>
+<div class="grid g2">{cards}</div>
+"""
+
+
+def compliance_set(agent_id: str, documents, selected, body: str) -> str:
+    tabs = "".join(
+        f'<a href="/compliance/{e(agent_id)}?doc={e(d.key)}">'
+        f'<button {"class=primary" if d.key == selected else ""}>{e(d.title)}'
+        f'{" ·" if d.required else ""}</button></a> ' for d in documents)
+    return f"""
+<h1 class="mono">{e(agent_id)}</h1>
+<p class="lede">Точка после названия означает, что документ обязателен для этой
+  степени риска. Остальные не требуются приказом, но нужны при аудите и в споре.</p>
+<div class="row" style="margin-top:0">{tabs}</div>
+<div class="row">
+  <a href="/compliance/{e(agent_id)}/download"><button class="primary">Скачать комплект</button></a>
+  <a href="/compliance"><button>Ко всем агентам</button></a>
+</div>
+<h2>{e(next((d.title for d in documents if d.key == selected), ""))}</h2>
+<div class="card"><pre class="mono" style="white-space:pre-wrap;margin:0;font-size:12.5px">{e(body)}</pre></div>
+"""
+
+
+# --- журнал: якоря ----------------------------------------------------------
+
+def anchors_block(items) -> str:
+    if not items:
+        return ('<div class="empty">Корень ещё не фиксировался. Фиксация нужна '
+                'затем, что цепочку хешей можно пересчитать целиком — а '
+                'зафиксированный ранее корень в переписанном журнале не найдётся.</div>')
+    rows = "".join(
+        f'<tr><td class="mono">{e(a["ts"].replace("T", " "))}</td>'
+        f'<td class="mono">{a["seq"]}</td><td class="mono">{a["entries"]}</td>'
+        f'<td class="mono">{e(a["head"][7:27])}…</td>'
+        f'<td>{"подписан" if a.get("signature") else "без подписи ЭЦП"}</td></tr>'
+        for a in reversed(items))
+    return ('<table><tr><th>Когда</th><th>Запись</th><th>Всего</th>'
+            f'<th>Корень</th><th>Подпись</th></tr>{rows}</table>')

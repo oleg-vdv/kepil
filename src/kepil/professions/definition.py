@@ -74,6 +74,7 @@ class ProfessionDefinition:
     risk_class: str = "средний"
     risk_rationale: str = ""
     deliverable: str = ""
+    human_baseline_minutes: float = 0.0
     builtin: bool = False
 
     # --- сериализация ---
@@ -119,6 +120,8 @@ class ProfessionDefinition:
             problems.append("нужно указать хотя бы одну границу в «не делает»")
         if not self.steps:
             problems.append("нужен хотя бы один шаг")
+        if self.human_baseline_minutes < 0:
+            problems.append("норматив ручной работы не может быть отрицательным")
         if self.risk_class not in ("минимальный", "средний", "высокий"):
             problems.append("степень риска вне классификации ст. 17 п. 1")
         for step in self.steps:

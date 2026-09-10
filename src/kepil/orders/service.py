@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..gateway import ActionGateway, ActionRequest, Decision
-from ..journal import Journal, JournalEntry, verify_chain
+from ..journal import Journal, JournalEntry, verify_with_anchors
 from ..mandate import Mandate
 from ..professions import Profession, get as get_definition
 from ..registry import store as agents
@@ -233,5 +233,73 @@ def confirm(order: Order, approved: bool, note: str = "") -> None:
     order.save()
 
 
+def stop(order: Order, reason: str = "") -> None:
+    """Немедленная остановка заказа (ст. 18 п. 2).
+
+    Незавершённое необратимое действие не выполняется: оно снимается из очереди
+    и остаётся в журнале как несостоявшееся.
+    """
+    Journal(journal_path()).append(JournalEntry(
+        agent_id=order.agent_id,
+        order_id=order.id,
+        mandate_id=order.mandate["mandate_id"],
+        step="order:stop",
+        action={"type": "stop:order", "target": None},
+        decision="deny",
+        human={"required": True, "approved": False, "confirmed_by": "operator",
+               "note": reason or "остановлено оператором",
+               "at": datetime.now().isoformat(timespec="seconds")},
+    ))
+    order.pending = None
+    order.status = "stopped"
+    order.note = reason
+    order.save()
+
+
+def resume(order: Order) -> None:
+    """Возврат остановленного заказа в работу."""
+    if order.status != "stopped":
+        return
+    order.status = "running" if order.cursor else "new"
+    order.note = ""
+    order.save()
+
+
+def rollback(order: Order, step_id: str) -> tuple[bool, str]:
+    """Компенсирующее действие для выполненного шага.
+
+    Возвращает (получилось, что произошло). Шаги, для которых компенсация не
+    описана, необратимы по определению — так и сообщаем.
+    """
+    row = next((r for r in order.results if r["step"] == step_id), None)
+    if row is None:
+        return False, "шаг не выполнялся"
+    if row.get("rolled_back"):
+        return False, "шаг уже откачен"
+    if row["decision"] != Decision.ALLOW.value:
+        return False, "откатывать нечего: действие не выполнялось"
+
+    compensation = Profession(order.definition()).rollback(row["action"])
+    if compensation is None:
+        return False, "откат невозможен: действие необратимо"
+
+    Journal(journal_path()).append(JournalEntry(
+        agent_id=order.agent_id,
+        order_id=order.id,
+        mandate_id=order.mandate["mandate_id"],
+        step=f"{step_id}:rollback",
+        action={"type": f"rollback:{row['action']}", "target": row["system"],
+                "compensation": compensation},
+        decision="allow",
+        human={"required": True, "approved": True, "confirmed_by": "operator",
+               "note": compensation,
+               "at": datetime.now().isoformat(timespec="seconds")},
+    ))
+    row["rolled_back"] = True
+    order.save()
+    return True, compensation
+
+
 def verify_journal() -> tuple[bool, str | None]:
-    return verify_chain(Journal(journal_path()))
+    """Проверка цепочки вместе с зафиксированными корнями."""
+    return verify_with_anchors(Journal(journal_path()))

@@ -16,7 +16,8 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
-from ..journal import Journal
+from .. import compliance, meter
+from ..journal import Journal, anchor, anchors
 from ..orders import service as orders
 from ..professions import definition as professions
 from ..registry import store as agents
@@ -103,6 +104,27 @@ def order_confirm(request: Request) -> Response:
     return Response(redirect=f"/orders/{order.id}")
 
 
+def order_stop(request: Request) -> Response:
+    orders.stop(orders.get(request.query["id"]), request.form("reason"))
+    return Response(redirect=f"/orders/{request.query['id']}")
+
+
+def order_resume(request: Request) -> Response:
+    orders.resume(orders.get(request.query["id"]))
+    return Response(redirect=f"/orders/{request.query['id']}")
+
+
+def order_rollback(request: Request) -> Response:
+    order = orders.get(request.query["id"])
+    done, message = orders.rollback(order, request.form("step"))
+    order = orders.get(order.id)
+    records = [r for r in Journal(orders.journal_path()) if r.get("order_id") == order.id]
+    body = views.order_page(order, order.definition(), views.journal_table(records),
+                            message if done else "")
+    return page(f"Заказ {order.id}", "orders", body,
+                None if done else ("err", message))
+
+
 def order_reset(request: Request) -> Response:
     order = orders.get(request.query["id"])
     order.cursor, order.results, order.pending, order.status = 0, [], None, "new"
@@ -154,6 +176,7 @@ def profession_save(request: Request) -> Response:
         risk_class=request.form("risk_class") or current.risk_class,
         risk_rationale=request.form("risk_rationale"),
         deliverable=request.form("deliverable"),
+        human_baseline_minutes=float(request.form("human_baseline_minutes") or 0),
     )
     problems = updated.validate()
     if problems:
@@ -211,9 +234,81 @@ def agent_status(request: Request) -> Response:
 
 
 def journal_view(request: Request) -> Response:
-    records = list(Journal(orders.journal_path()))
+    journal = Journal(orders.journal_path())
+    records = list(journal)
     return page("Журнал", "journal",
-                views.journal_page(records[-40:], orders.verify_journal(), len(records)))
+                views.journal_page(records[-40:], orders.verify_journal(),
+                                   len(records), views.anchors_block(anchors(journal))))
+
+
+def journal_anchor(request: Request) -> Response:
+    try:
+        anchor(Journal(orders.journal_path()))
+    except ValueError as exc:
+        return page("Журнал", "journal",
+                    views.journal_page([], orders.verify_journal(), 0), ("err", str(exc)))
+    return Response(redirect="/journal")
+
+
+# --- счётчик и комплаенс ----------------------------------------------------
+
+def meter_view(_: Request) -> Response:
+    return page("Счётчик", "meter", views.meter_page(
+        meter.totals(), meter.by_profession(), meter.by_agent(),
+        professions.load_all()))
+
+
+def _compliance_set(agent_id: str):
+    passport = agents.get(agent_id)
+    if passport is None:
+        raise KeyError(f"паспорт '{agent_id}' не найден")
+    profession_id = agent_id.split(".")[1]
+    definition = professions.get(profession_id)
+    counters = meter.by_agent().get(agent_id, meter.Counters())
+    stats = {"actions": counters.actions, "denied": counters.denied,
+             "confirmations": counters.confirmations, "returns": counters.returns,
+             "journal_ok": orders.verify_journal()[0]}
+    return definition, compliance.build(definition, passport, agents.settings(), stats)
+
+
+def compliance_index(_: Request) -> Response:
+    items = []
+    for passport in agents.all_passports():
+        try:
+            definition, documents = _compliance_set(passport["agent_id"])
+        except KeyError:
+            continue
+        items.append({
+            "agent_id": passport["agent_id"],
+            "profession_name": definition.name,
+            "risk_class": passport["risk_class"],
+            "required": sum(1 for d in documents if d.required),
+            "total": len(documents),
+            "todo": compliance.missing_marks(documents),
+        })
+    return page("Комплаенс", "compliance", views.compliance_index(items))
+
+
+def compliance_view(request: Request) -> Response:
+    _, documents = _compliance_set(request.query["id"])
+    selected = request.query.get("doc") or documents[0].key
+    body = next((d.body for d in documents if d.key == selected), documents[0].body)
+    return page("Комплаенс", "compliance",
+                views.compliance_set(request.query["id"], documents, selected, body))
+
+
+def compliance_download(request: Request) -> Response:
+    import io
+    import zipfile
+
+    agent_id = request.query["id"]
+    _, documents = _compliance_set(agent_id)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for document in documents:
+            archive.writestr(document.filename, document.body)
+    return Response(raw=buffer.getvalue(), content_type="application/zip",
+                    filename=f"{agent_id}-compliance.zip")
 
 
 def journal_export(_: Request) -> Response:
@@ -242,6 +337,9 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("POST", "/orders/<id>/step", order_step),
     ("POST", "/orders/<id>/confirm", order_confirm),
     ("POST", "/orders/<id>/reset", order_reset),
+    ("POST", "/orders/<id>/stop", order_stop),
+    ("POST", "/orders/<id>/resume", order_resume),
+    ("POST", "/orders/<id>/rollback", order_rollback),
     ("GET", "/professions", professions_list),
     ("POST", "/professions/new", profession_new),
     ("GET", "/professions/<id>", profession_view),
@@ -250,7 +348,12 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("POST", "/professions/<id>/delete", profession_delete),
     ("GET", "/agents", agents_list),
     ("POST", "/agents/<id>/status", agent_status),
+    ("GET", "/meter", meter_view),
+    ("GET", "/compliance", compliance_index),
+    ("GET", "/compliance/<id>", compliance_view),
+    ("GET", "/compliance/<id>/download", compliance_download),
     ("GET", "/journal", journal_view),
+    ("POST", "/journal/anchor", journal_anchor),
     ("POST", "/journal/verify", journal_view),
     ("GET", "/journal/export", journal_export),
     ("GET", "/settings", settings_view),
@@ -291,13 +394,16 @@ class _Handler(BaseHTTPRequestHandler):
         self._dispatch("POST")
 
     def _dispatch(self, method: str) -> None:
-        path = urllib.parse.urlparse(self.path).path
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
         found = resolve(method, path)
         if not found:
             self._send(Response("<h1>404</h1><p>Страница не найдена. "
                                 "<a href=\"/\">На главную</a></p>", status=404))
             return
         handler, query = found
+        for key, value in urllib.parse.parse_qs(parsed.query).items():
+            query.setdefault(key, value[0])
         params: Params = {}
         if method == "POST":
             length = int(self.headers.get("Content-Length") or 0)
