@@ -42,3 +42,14 @@ def test_head_moves_forward(tmp_path):
     second = j.append(_entry())
     assert second["prev_hash"] == first["hash"]
     assert j.head() == second["hash"]
+
+
+def test_canonical_numbers_are_javascript_compatible(tmp_path):
+    """Целые float пишутся как int — иначе внешний верификатор на JS не сойдётся."""
+    from kepil.journal.chain import _canonical
+
+    assert b'"cost_kzt":0' in _canonical({"cost_kzt": 0.0})
+    assert b'"cost_kzt":41.2' in _canonical({"cost_kzt": 41.2})
+    assert b'"n":1' in _canonical({"n": 1})
+    assert b'"flag":true' in _canonical({"flag": True})
+    assert b'"nested":{"x":3}' in _canonical({"nested": {"x": 3.0}})
