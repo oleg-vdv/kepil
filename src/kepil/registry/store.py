@@ -32,6 +32,8 @@ def settings() -> dict[str, str]:
         "bin": stored.get("bin", "000000000000"),
         "name": stored.get("name", "Kepil"),
         "operator": stored.get("operator", "оператор"),
+        "telegram_token": stored.get("telegram_token", ""),
+        "telegram_chat_id": stored.get("telegram_chat_id", ""),
     }
 
 

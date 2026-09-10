@@ -16,7 +16,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
-from .. import compliance, meter
+from .. import compliance, meter, notify
 from ..journal import Journal, anchor, anchors
 from ..orders import service as orders
 from ..professions import definition as professions
@@ -329,9 +329,28 @@ def settings_view(_: Request) -> Response:
 
 
 def settings_save(request: Request) -> Response:
-    agents.save_settings({"name": request.form("name"), "bin": request.form("bin"),
-                          "operator": request.form("operator")})
+    agents.save_settings({
+        "name": request.form("name"),
+        "bin": request.form("bin"),
+        "operator": request.form("operator"),
+        "telegram_token": request.form("telegram_token"),
+        "telegram_chat_id": request.form("telegram_chat_id"),
+    })
     return Response(redirect="/settings")
+
+
+def settings_test(_: Request) -> Response:
+    """Проверка канала: бот должен прислать сообщение в указанный чат."""
+    client = notify.bot()
+    if client is None:
+        message = ("err", "заполните токен и чат, затем сохраните настройки")
+    else:
+        try:
+            message = ("ok", f"связь есть: сообщение отправлено ботом @{client.check()}")
+        except notify.TelegramError as exc:
+            message = ("err", f"не получилось: {exc}")
+    return page("Настройки", "settings",
+                views.settings_page(agents.settings(), data_dir().resolve()), message)
 
 
 ROUTES: list[tuple[str, str, Handler]] = [
@@ -364,6 +383,7 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("GET", "/journal/export", journal_export),
     ("GET", "/settings", settings_view),
     ("POST", "/settings", settings_save),
+    ("POST", "/settings/test", settings_test),
 ]
 
 
@@ -440,9 +460,22 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def _start_telegram() -> None:
+    """Приём нажатий из Telegram живёт рядом с панелью, если канал настроен."""
+    import threading
+
+    client = notify.bot()
+    if client is None:
+        print("Telegram не настроен: подтверждения ждут в панели")
+        return
+    threading.Thread(target=notify.run, args=(client,), daemon=True).start()
+    print("Telegram подключён: подтверждения придут в телефон")
+
+
 def serve(port: int = 7317, host: str = "127.0.0.1") -> None:
     print(f"Kepil · панель оператора: http://localhost:{port}")
     print(f"данные: {data_dir().resolve()}")
+    _start_telegram()
     ThreadingHTTPServer((host, port), _Handler).serve_forever()
 
 

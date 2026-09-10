@@ -479,8 +479,26 @@ def settings_page(org, data_path) -> str:
     <div><label>БИН</label><input type="text" name="bin" value="{e(org["bin"])}" pattern="[0-9]{{12}}" required></div>
     <div><label>Кто подтверждает действия</label><input type="text" name="operator" value="{e(org["operator"])}"></div>
   </div>
+  <h2>Подтверждения в телефон</h2>
+  <p class="lede">Пока канал не настроен, карточки ждут в панели — и ты привязан
+    к компьютеру. Настроенный канал присылает действие с двумя кнопками прямо в
+    Telegram: решение принимается с телефона, где бы ты ни был.</p>
+  <div class="cols">
+    <div><label>Токен бота
+        <span class="hint">получить у @BotFather за пять минут, бесплатно</span></label>
+      <input type="text" name="telegram_token" value="{e(org.get("telegram_token", ""))}"
+             placeholder="1234567890:AA..."></div>
+    <div><label>Твой чат
+        <span class="hint">узнать у @userinfobot: он пришлёт Id</span></label>
+      <input type="text" name="telegram_chat_id" value="{e(org.get("telegram_chat_id", ""))}"
+             placeholder="123456789"></div>
+  </div>
   <div class="row"><button class="primary">Сохранить</button></div>
 </form>
+<div class="row">
+  <form class="inline" method="post" action="/settings/test">
+    <button>Проверить связь</button></form>
+</div>
 <h2>Хранение</h2>
 <div class="card"><dl class="kv">
   <dt>Каталог данных</dt><dd class="mono">{e(data_path)}</dd>

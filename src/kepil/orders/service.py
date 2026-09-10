@@ -197,12 +197,23 @@ def run_next(order: Order) -> tuple[Decision, str] | None:
     if decision is Decision.AWAIT_HUMAN:
         order.pending = row
         order.status = "awaiting"
+        _call_human(order)
     elif order.cursor >= len(steps):
         order.status = "done"
     else:
         order.status = "running"
     order.save()
     return decision, reason
+
+
+def _call_human(order: "Order") -> None:
+    """Зовёт оператора в настроенный канал. Молча, если канал не настроен."""
+    from .. import notify
+
+    try:
+        notify.on_pending(order)
+    except Exception:  # уведомление не должно ломать заказ
+        pass
 
 
 def confirm(order: Order, approved: bool, note: str = "") -> None:
