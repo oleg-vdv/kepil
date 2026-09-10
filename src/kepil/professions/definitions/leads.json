@@ -1,0 +1,97 @@
+{
+  "id": "leads",
+  "name": "Заявки и переписка",
+  "summary": "Входящие заявки из WhatsApp и с сайта: ответить за минуты, квалифицировать, завести в CRM, горячее передать человеку.",
+  "purpose": "Обработка входящих заявок и переписка с клиентами с передачей квалифицированных в CRM",
+  "does_not": [
+    "не обещает цену и сроки от имени компании",
+    "не отправляет счета и договоры",
+    "не звонит и не пишет первым по холодной базе",
+    "не выгружает базу клиентов за пределы контура"
+  ],
+  "intake": [
+    "доступ к номеру WhatsApp Business или его API",
+    "доступ к CRM: amoCRM, Bitrix24 или таблица",
+    "прайс и условия, которые можно называть клиенту",
+    "правила квалификации: что считается горячей заявкой",
+    "кому и в какие часы передавать горячие заявки"
+  ],
+  "steps": [
+    {
+      "id": "read_inbox",
+      "title": "Приём входящей заявки",
+      "action": "read:inbox",
+      "system": "whatsapp.local",
+      "cost_kzt": 2.0
+    },
+    {
+      "id": "read_crm",
+      "title": "Проверка, есть ли клиент в CRM",
+      "action": "read:crm",
+      "system": "crm.local",
+      "cost_kzt": 1.5
+    },
+    {
+      "id": "generate_reply",
+      "title": "Подготовка ответа по прайсу и условиям",
+      "action": "generate:reply",
+      "system": null,
+      "cost_kzt": 8.0
+    },
+    {
+      "id": "send_message",
+      "title": "Ответ клиенту",
+      "action": "send:message",
+      "system": "whatsapp.local",
+      "cost_kzt": 0.0
+    },
+    {
+      "id": "write_crm",
+      "title": "Заведение сделки и заполнение полей",
+      "action": "write:crm",
+      "system": "crm.local",
+      "cost_kzt": 2.0
+    },
+    {
+      "id": "generate_summary",
+      "title": "Сводка для менеджера по горячей заявке",
+      "action": "generate:summary",
+      "system": null,
+      "cost_kzt": 6.0
+    },
+    {
+      "id": "send_handoff",
+      "title": "Передача горячей заявки человеку",
+      "action": "send:handoff",
+      "system": "crm.local",
+      "cost_kzt": 0.0
+    }
+  ],
+  "irreversible": [
+    "send:*",
+    "write:crm",
+    "publish:*"
+  ],
+  "rollback": {
+    "send:message": "отправить уточняющее сообщение с исправлением",
+    "write:crm": "вернуть предыдущее состояние сделки из журнала",
+    "send:handoff": "отозвать передачу и вернуть заявку в очередь"
+  },
+  "limits": {
+    "messages": 300,
+    "llm_cost_kzt": 4000
+  },
+  "allowed_systems": [
+    "whatsapp.local",
+    "crm.local"
+  ],
+  "forbidden_actions": [
+    "sign:*",
+    "pay:*",
+    "export:database",
+    "send:bulk"
+  ],
+  "risk_class": "средний",
+  "risk_rationale": "ст. 17 п. 1: обработка персональных данных клиентов и переписка от имени компании; возможен материальный ущерб и репутационный вред, чрезвычайная ситуация исключена",
+  "deliverable": "Отвеченные заявки, заполненные карточки в CRM, горячие переданы человеку со сводкой"
+}

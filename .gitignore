@@ -10,3 +10,5 @@ journal/
 dist/
 build/
 *.egg-info/
+.demo-data/
+data/

@@ -1,0 +1,88 @@
+{
+  "id": "primary_docs",
+  "name": "Первичка и документооборот",
+  "summary": "Входящие накладные и счета-фактуры: сверка с договором и фактом, три корзины решений, контроль двадцатидневного срока.",
+  "purpose": "Сверка входящих сопроводительных накладных и счетов-фактур с учётом и подготовка решения по каждой",
+  "does_not": [
+    "не подтверждает и не отклоняет документы в государственной системе",
+    "не выписывает документы от имени клиента",
+    "не хранит и не использует ЭЦП клиента"
+  ],
+  "intake": [
+    "выгрузка входящих документов из информационной системы",
+    "выгрузка из учётной системы или таблица поступлений",
+    "договоры и приложения с номенклатурой",
+    "кто принимает решение по спорным документам"
+  ],
+  "steps": [
+    {
+      "id": "read_incoming",
+      "title": "Забор входящих документов",
+      "action": "read:incoming",
+      "system": "esf.local",
+      "cost_kzt": 3.0
+    },
+    {
+      "id": "read_accounting",
+      "title": "Сверка с учётной системой",
+      "action": "read:accounting",
+      "system": "accounting.local",
+      "cost_kzt": 3.0
+    },
+    {
+      "id": "generate_match",
+      "title": "Сопоставление номенклатуры и количеств",
+      "action": "generate:match",
+      "system": null,
+      "cost_kzt": 12.0
+    },
+    {
+      "id": "generate_verdict",
+      "title": "Три корзины: чисто, расхождение, подозрительно",
+      "action": "generate:verdict",
+      "system": null,
+      "cost_kzt": 9.0
+    },
+    {
+      "id": "generate_explanation",
+      "title": "Объяснение расхождений на языке бухгалтера",
+      "action": "generate:explanation",
+      "system": null,
+      "cost_kzt": 7.0
+    },
+    {
+      "id": "send_digest",
+      "title": "Сводка бухгалтеру со сроками",
+      "action": "send:digest",
+      "system": "whatsapp.local",
+      "cost_kzt": 0.0
+    }
+  ],
+  "irreversible": [
+    "send:*",
+    "confirm:*",
+    "reject:*"
+  ],
+  "rollback": {
+    "send:digest": "отправить исправленную сводку",
+    "confirm:document": ""
+  },
+  "limits": {
+    "documents": 500,
+    "llm_cost_kzt": 5000
+  },
+  "allowed_systems": [
+    "esf.local",
+    "accounting.local",
+    "whatsapp.local"
+  ],
+  "forbidden_actions": [
+    "sign:*",
+    "pay:*",
+    "confirm:esf",
+    "reject:esf"
+  ],
+  "risk_class": "средний",
+  "risk_rationale": "ст. 17 п. 1: ошибка ведёт к материальному ущербу в виде штрафа за нарушение срока подтверждения, чрезвычайная ситуация исключена",
+  "deliverable": "Разобранные документы по трём корзинам с объяснениями и контролем сроков"
+}

@@ -1,0 +1,84 @@
+{
+  "id": "ai_audit",
+  "name": "Аудит внедрения ИИ",
+  "summary": "Что у компании уже работает на ИИ, какие данные туда уходят и что придётся показать проверяющему.",
+  "purpose": "Обследование применения искусственного интеллекта в компании и подготовка документации по требованиям законодательства",
+  "does_not": [
+    "не даёт юридического заключения",
+    "не выносит данные клиента за пределы контура",
+    "не подтверждает соответствие за регулятора"
+  ],
+  "intake": [
+    "перечень систем и подрядчиков, где применяется ИИ",
+    "доступ к репозиториям или согласие на сканирование",
+    "кто в компании отвечает за обработку персональных данных",
+    "были ли инциденты и как они разбирались"
+  ],
+  "steps": [
+    {
+      "id": "read_inventory",
+      "title": "Инвентаризация: где уже работает ИИ",
+      "action": "read:inventory",
+      "system": "inventory.local",
+      "cost_kzt": 5.0
+    },
+    {
+      "id": "read_dataflows",
+      "title": "Куда уходят данные и какие именно",
+      "action": "read:dataflows",
+      "system": "inventory.local",
+      "cost_kzt": 6.0
+    },
+    {
+      "id": "generate_classification",
+      "title": "Классификация по риску и автономности с обоснованием",
+      "action": "generate:classification",
+      "system": null,
+      "cost_kzt": 14.0
+    },
+    {
+      "id": "generate_docs",
+      "title": "Комплект документации по приказу № 95/НҚ",
+      "action": "generate:docs",
+      "system": null,
+      "cost_kzt": 18.0
+    },
+    {
+      "id": "generate_gaps",
+      "title": "Перечень разрывов и план их закрытия",
+      "action": "generate:gaps",
+      "system": null,
+      "cost_kzt": 10.0
+    },
+    {
+      "id": "send_report",
+      "title": "Передача отчёта заказчику",
+      "action": "send:report",
+      "system": "storage.kepil.kz",
+      "cost_kzt": 0.0
+    }
+  ],
+  "irreversible": [
+    "send:*",
+    "publish:*"
+  ],
+  "rollback": {
+    "send:report": "направить исправленный отчёт с пометкой об отзыве предыдущего"
+  },
+  "limits": {
+    "documents": 40,
+    "llm_cost_kzt": 8000
+  },
+  "allowed_systems": [
+    "inventory.local",
+    "storage.kepil.kz"
+  ],
+  "forbidden_actions": [
+    "sign:*",
+    "pay:*",
+    "write:production"
+  ],
+  "risk_class": "средний",
+  "risk_rationale": "ст. 17 п. 1: выводы влияют на решения клиента о соответствии требованиям; прямого управления системами нет",
+  "deliverable": "Отчёт об инвентаризации, классификация, комплект документации и план закрытия разрывов"
+}

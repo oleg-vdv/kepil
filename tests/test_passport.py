@@ -4,8 +4,11 @@ from datetime import date
 
 import pytest
 
+from kepil.professions import Profession, load
 from kepil.registry import AgentPassport
-from kepil.professions.tender import PASSPORT as TENDER
+
+OPERATOR = {"bin": "123456789012", "name": "Kepil"}
+TENDER = Profession(load("tender").definition).passport(OPERATOR, released="2026-09-10")
 
 
 def test_tender_passport_is_medium_autonomy():
@@ -17,7 +20,7 @@ def test_high_autonomy_is_refused():
     with pytest.raises(ValueError, match="высокая автономность"):
         AgentPassport(
             agent_id="kepil.x.v1", purpose="что-то делает", does_not=["ничего"],
-            created_by={"bin": "000000000000"}, operated_by={"bin": "000000000000"},
+            created_by=OPERATOR, operated_by=OPERATOR,
             version={"agent": "1.0.0", "released_at": "2026-09-10"},
             autonomy_class="высокая",
         )
@@ -27,14 +30,14 @@ def test_unknown_risk_class_is_refused():
     with pytest.raises(ValueError, match="класс риска"):
         AgentPassport(
             agent_id="kepil.x.v1", purpose="что-то делает", does_not=["ничего"],
-            created_by={"bin": "000000000000"}, operated_by={"bin": "000000000000"},
+            created_by=OPERATOR, operated_by=OPERATOR,
             version={"agent": "1.0.0", "released_at": "2026-09-10"},
             risk_class="никакой",
         )
 
 
 def test_review_due_after_a_year():
-    assert TENDER.review_due(date(2027, 9, 10))
+    assert TENDER.review_due(date(2027, 9, 11))
     assert not TENDER.review_due(date(2026, 12, 1))
 
 

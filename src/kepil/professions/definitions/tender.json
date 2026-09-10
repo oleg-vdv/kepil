@@ -1,0 +1,87 @@
+{
+  "id": "tender",
+  "name": "Тендерный пакет",
+  "summary": "Отбор закупок, вердикт о проходимости, сборка пакета документов и разбор отказов.",
+  "purpose": "Подготовка пакета документов для участия в государственных закупках",
+  "does_not": [
+    "не подаёт заявку на портал",
+    "не подписывает документы",
+    "не обращается к системам вне белого списка",
+    "не хранит и не использует ЭЦП клиента"
+  ],
+  "intake": [
+    "профиль компании: лицензии и их категории",
+    "опыт: реестр исполненных договоров",
+    "финансовые показатели за последний период",
+    "техника и персонал",
+    "регистрации: национальный каталог, НТИН, реестр производителей"
+  ],
+  "steps": [
+    {
+      "id": "select_announcements",
+      "title": "Отбор объявлений",
+      "action": "read:goszakup",
+      "system": "goszakup.gov.kz",
+      "cost_kzt": 12.4
+    },
+    {
+      "id": "parse_specification",
+      "title": "Разбор технической спецификации",
+      "action": "read:goszakup",
+      "system": "goszakup.gov.kz",
+      "cost_kzt": 41.2
+    },
+    {
+      "id": "check_eligibility",
+      "title": "Вердикт о проходимости",
+      "action": "read:client_profile",
+      "system": "storage.kepil.kz",
+      "cost_kzt": 0.0
+    },
+    {
+      "id": "detect_tailoring",
+      "title": "Поиск требований под конкурента",
+      "action": "read:goszakup",
+      "system": "goszakup.gov.kz",
+      "cost_kzt": 18.0
+    },
+    {
+      "id": "assemble_package",
+      "title": "Сборка пакета документов",
+      "action": "generate:document",
+      "system": "storage.kepil.kz",
+      "cost_kzt": 28.0
+    },
+    {
+      "id": "handover_to_client",
+      "title": "Передача пакета клиенту на подпись",
+      "action": "send:package",
+      "system": "storage.kepil.kz",
+      "cost_kzt": 0.0
+    }
+  ],
+  "irreversible": [
+    "send:*",
+    "publish:*",
+    "write:external"
+  ],
+  "rollback": {
+    "send:package": "уведомить получателя об отзыве и направить корректный пакет",
+    "publish:complaint": ""
+  },
+  "limits": {
+    "documents": 20,
+    "llm_cost_kzt": 3000
+  },
+  "allowed_systems": [
+    "goszakup.gov.kz",
+    "storage.kepil.kz"
+  ],
+  "forbidden_actions": [
+    "sign:*",
+    "pay:*"
+  ],
+  "risk_class": "средний",
+  "risk_rationale": "ст. 17 п. 1: возможен материальный ущерб в виде несостоявшегося участия, чрезвычайная ситуация исключена",
+  "deliverable": "Готовый пакет документов с чек-листом «что подписать и приложить руками»"
+}
