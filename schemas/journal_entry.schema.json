@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kepil.kz/schemas/journal_entry.schema.json",
+  "title": "Запись журнала",
+  "type": "object",
+  "required": ["seq", "ts", "agent_id", "action", "decision", "prev_hash", "hash"],
+  "properties": {
+    "seq": {"type": "integer", "minimum": 0},
+    "ts": {"type": "string", "format": "date-time"},
+    "order_id": {"type": "string"},
+    "mandate_id": {"type": "string"},
+    "agent_id": {"type": "string"},
+    "step": {"type": "string"},
+    "action": {"type": "object", "required": ["type"]},
+    "input_ref": {"type": "string"},
+    "prompt_version": {"type": "string"},
+    "model": {"type": "object"},
+    "pii": {"type": "object",
+            "properties": {"detected": {"type": "integer"},
+                           "masked": {"type": "integer"},
+                           "values_stored": {"const": false}}},
+    "decision": {"enum": ["allow", "deny", "await_human"]},
+    "human": {"type": "object"},
+    "cost_kzt": {"type": "number"},
+    "result_ref": {"type": "string"},
+    "prev_hash": {"type": "string"},
+    "hash": {"type": "string"}
+  }
+}

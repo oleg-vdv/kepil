@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kepil.kz/schemas/mandate.schema.json",
+  "title": "Мандат агента на заказ",
+  "type": "object",
+  "required": ["mandate_id", "agent_id", "order_id", "principal",
+               "allowed_actions", "allowed_systems", "limits",
+               "valid_from", "valid_until", "human_confirmation_required"],
+  "properties": {
+    "mandate_id": {"type": "string"},
+    "agent_id": {"type": "string"},
+    "order_id": {"type": "string"},
+    "principal": {"type": "object", "required": ["bin"]},
+    "allowed_actions": {"type": "array", "items": {"type": "string"}},
+    "forbidden_actions": {"type": "array", "items": {"type": "string"}},
+    "allowed_systems": {"type": "array", "items": {"type": "string"}},
+    "limits": {
+      "type": "object",
+      "properties": {
+        "amount_kzt": {"type": "number", "minimum": 0},
+        "documents": {"type": "integer", "minimum": 0},
+        "llm_cost_kzt": {"type": "number", "minimum": 0}
+      }
+    },
+    "valid_from": {"type": "string", "format": "date-time"},
+    "valid_until": {"type": "string", "format": "date-time"},
+    "human_confirmation_required": {"type": "array", "items": {"type": "string"}},
+    "signature": {"type": "object"}
+  }
+}

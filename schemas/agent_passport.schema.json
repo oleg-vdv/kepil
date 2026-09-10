@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kepil.kz/schemas/agent_passport.schema.json",
+  "title": "Паспорт агента",
+  "type": "object",
+  "required": ["agent_id", "created_by", "operated_by", "purpose", "does_not",
+               "version", "risk_class", "autonomy_class", "limits", "status"],
+  "properties": {
+    "agent_id": {"type": "string", "pattern": "^kepil\\.[a-z0-9_]+\\.v[0-9]+$"},
+    "created_by": {"$ref": "#/$defs/party"},
+    "operated_by": {"$ref": "#/$defs/party"},
+    "acts_on_behalf_of": {"type": "object"},
+    "purpose": {"type": "string", "minLength": 10},
+    "does_not": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "version": {"type": "object", "required": ["agent", "released_at"]},
+    "models": {"type": "array", "items": {"type": "object"}},
+    "risk_class": {"enum": ["минимальный", "средний", "высокий"]},
+    "risk_rationale": {"type": "string"},
+    "autonomy_class": {"enum": ["низкая", "средняя", "высокая"]},
+    "autonomy_rationale": {"type": "string"},
+    "limits": {"type": "object"},
+    "risk_review": {"type": "object", "required": ["last", "next_due"]},
+    "incidents": {"type": "integer", "minimum": 0},
+    "status": {"enum": ["draft", "active", "suspended", "retired"]},
+    "passport_hash": {"type": "string"},
+    "signature": {"type": "object"}
+  },
+  "$defs": {
+    "party": {
+      "type": "object",
+      "required": ["bin"],
+      "properties": {"bin": {"type": "string", "pattern": "^[0-9]{12}$"},
+                     "name": {"type": "string"}, "role": {"type": "string"}}
+    }
+  }
+}
