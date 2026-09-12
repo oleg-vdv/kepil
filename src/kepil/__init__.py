@@ -5,4 +5,4 @@ from importlib.metadata import PackageNotFoundError, version as _version
 try:
     __version__ = _version("kepil")
 except PackageNotFoundError:          # запуск из исходников без установки
-    __version__ = "0.2.0"
+    __version__ = "0.2.1"

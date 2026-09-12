@@ -1,6 +1,6 @@
 [project]
 name = "kepil"
-version = "0.2.0"
+version = "0.2.1"
 description = "Accountability layer for AI agents: passport, mandate, action gateway, tamper-evident journal"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -1,5 +1,8 @@
 # Kepil
 
+[![PyPI](https://img.shields.io/pypi/v/kepil?color=1F5C4E)](https://pypi.org/project/kepil/)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-1F5C4E)](LICENSE)
+
 **Accountability layer for AI agents.** Give every agent a passport, put every
 action through one gate, and keep a log that cannot be rewritten afterwards.
 
@@ -128,7 +131,7 @@ order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
 
 ## Status
 
-Alpha, 79 tests. Interfaces may still change. Nothing here is a legal opinion:
+Alpha, 91 tests. Interfaces may still change. Nothing here is a legal opinion:
 before relying on generated documents, have them reviewed by a lawyer in your
 jurisdiction.
 
