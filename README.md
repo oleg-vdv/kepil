@@ -76,6 +76,28 @@ irreversible action, the human would drop out of the chain and the whole design
 would be pointless. The confirmation card goes to a person — in the panel or in
 Telegram — and no MCP client can press it. A test enforces this.
 
+## Guard your existing automations
+
+Kepil has a small JSON API, so an n8n workflow, a Make scenario or your own
+script can ask permission before acting:
+
+```bash
+curl -X POST http://localhost:7317/api/check   -H "Authorization: Bearer $KEPIL_API_TOKEN"   -H "Content-Type: application/json"   -d '{"order_id":"ord-0042","action":"send:message","system":"whatsapp.local"}'
+```
+
+```json
+{ "decision": "await_human", "allowed": false, "needs_human": true,
+  "reason": "необратимое действие: требуется подтверждение человека" }
+```
+
+The answer is recorded in the journal, so later you can show on what grounds the
+automation did — or did not do — something. For n8n there is a ready node:
+[n8n-nodes-kepil](https://github.com/oleg-vdv/n8n-nodes-kepil).
+
+**The API stays off until you set a token** (panel → Settings, or
+`KEPIL_API_TOKEN`). A panel bound to localhost is protected by the binding; a
+programmatic interface is not, so it is disabled by default.
+
 ## An agent here is never fully autonomous
 
 `AgentPassport` refuses to be constructed with the autonomy class where a human
@@ -131,7 +153,7 @@ order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
 
 ## Status
 
-Alpha, 91 tests. Interfaces may still change. Nothing here is a legal opinion:
+Alpha, 107 tests. Interfaces may still change. Nothing here is a legal opinion:
 before relying on generated documents, have them reviewed by a lawyer in your
 jurisdiction.
 

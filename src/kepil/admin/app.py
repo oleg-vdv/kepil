@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,7 +23,7 @@ from ..orders import service as orders
 from ..professions import definition as professions
 from ..registry import store as agents
 from ..storage import data_dir
-from . import views
+from . import api, views
 
 Params = dict[str, str]
 Handler = Callable[["Request"], "Response"]
@@ -37,8 +38,10 @@ class Response:
 
 
 class Request:
-    def __init__(self, path: str, params: Params, query: Params) -> None:
+    def __init__(self, path: str, params: Params, query: Params,
+                 headers: Params | None = None) -> None:
         self.path, self.params, self.query = path, params, query
+        self.headers = {k.lower(): v for k, v in (headers or {}).items()}
 
     def form(self, name: str, default: str = "") -> str:
         return self.params.get(name, default).strip()
@@ -332,18 +335,42 @@ def journal_export(_: Request) -> Response:
                     filename="journal.jsonl")
 
 
+def api_call(name: str, method: str, request: Request) -> Response:
+    """Программный вызов: ключ обязателен, ответ всегда JSON."""
+    if not api.authorized(request.headers):
+        return Response(raw=api.dumps({
+            "error": "нужен ключ доступа",
+            "how": "заголовок Authorization: Bearer <ключ>; ключ задаётся "
+                   "переменной KEPIL_API_TOKEN или в настройках панели",
+        }), status=401, content_type="application/json; charset=utf-8")
+
+    body = request.params.get("__json__") or {}
+    status, payload = api.handle(name, method, body, request.query)
+    return Response(raw=api.dumps(payload), status=status,
+                    content_type="application/json; charset=utf-8")
+
+
 def settings_view(_: Request) -> Response:
     return page("Настройки", "settings",
                 views.settings_page(agents.settings(), data_dir().resolve()))
 
 
 def settings_save(request: Request) -> Response:
+    api_token = request.form("api_token")
+    if api_token and not api_token.isascii():
+        # Заголовок HTTP передаётся в latin-1: кириллический ключ клиент
+        # физически не сможет отправить, а ошибка вылезет у него, не у нас.
+        return page("Настройки", "settings",
+                    views.settings_page(agents.settings(), data_dir().resolve()),
+                    ("err", "ключ доступа должен состоять из латиницы, цифр и знаков "
+                            "препинания: кириллицу невозможно передать в заголовке"))
     agents.save_settings({
         "name": request.form("name"),
         "bin": request.form("bin"),
         "operator": request.form("operator"),
         "telegram_token": request.form("telegram_token"),
         "telegram_chat_id": request.form("telegram_chat_id"),
+        "api_token": request.form("api_token"),
     })
     return Response(redirect="/settings")
 
@@ -390,6 +417,13 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("POST", "/journal/anchor", journal_anchor),
     ("POST", "/journal/verify", journal_view),
     ("GET", "/journal/export", journal_export),
+    ("GET", "/api/health", lambda r: api_call("health", "GET", r)),
+    ("GET", "/api/professions", lambda r: api_call("professions", "GET", r)),
+    ("POST", "/api/orders", lambda r: api_call("orders", "POST", r)),
+    ("GET", "/api/orders/<id>", lambda r: api_call("order", "GET", r)),
+    ("POST", "/api/orders/<id>/step", lambda r: api_call("step", "POST", r)),
+    ("POST", "/api/check", lambda r: api_call("check", "POST", r)),
+    ("GET", "/api/journal/verify", lambda r: api_call("verify", "GET", r)),
     ("GET", "/settings", settings_view),
     ("POST", "/settings", settings_save),
     ("POST", "/settings/test", settings_test),
@@ -443,9 +477,15 @@ class _Handler(BaseHTTPRequestHandler):
         if method == "POST":
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length).decode("utf-8") if length else ""
-            params = {k: v[0] for k, v in urllib.parse.parse_qs(raw).items()}
+            if "json" in (self.headers.get("Content-Type") or ""):
+                try:
+                    params = {"__json__": json.loads(raw or "{}")}
+                except json.JSONDecodeError:
+                    params = {"__json__": {}}
+            else:
+                params = {k: v[0] for k, v in urllib.parse.parse_qs(raw).items()}
         try:
-            response = handler(Request(path, params, query))
+            response = handler(Request(path, params, query, dict(self.headers)))
         except KeyError as exc:
             response = Response(f"<h1>Не найдено</h1><p>{exc}</p>", status=404)
         except Exception as exc:  # ошибка панели не должна ронять сервер

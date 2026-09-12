@@ -493,6 +493,15 @@ def settings_page(org, data_path) -> str:
       <input type="text" name="telegram_chat_id" value="{e(org.get("telegram_chat_id", ""))}"
              placeholder="123456789"></div>
   </div>
+  <h2>Программный доступ</h2>
+  <p class="lede">Нужен, чтобы Kepil спрашивали автоматизации — n8n, Make,
+    собственные скрипты. Пока ключ пуст, программный интерфейс выключен целиком.</p>
+  <div class="cols">
+    <div><label>Ключ доступа
+        <span class="hint">произвольная строка подлиннее; можно задать переменной KEPIL_API_TOKEN</span></label>
+      <input type="text" name="api_token" value="{e(org.get("api_token", ""))}"
+             placeholder="оставьте пустым, чтобы выключить"></div>
+  </div>
   <div class="row"><button class="primary">Сохранить</button></div>
 </form>
 <div class="row">
