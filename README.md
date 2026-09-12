@@ -52,6 +52,27 @@ puts it back.
 two buttons — approve or return — so being accountable does not mean sitting at
 a laptop.
 
+## Use it from any MCP client
+
+Kepil ships an MCP server, so an editor, an assistant or another agent can work
+through it — and every action still passes the same gate into the same journal.
+
+```json
+{
+  "mcpServers": {
+    "kepil": { "command": "python", "args": ["-m", "kepil.mcp"] }
+  }
+}
+```
+
+Seven tools: list professions, create an order, run a step, read order status,
+see what is waiting for a human, verify the journal, read an agent passport.
+
+**One tool is deliberately missing: confirmation.** If a model could approve an
+irreversible action, the human would drop out of the chain and the whole design
+would be pointless. The confirmation card goes to a person — in the panel or in
+Telegram — and no MCP client can press it. A test enforces this.
+
 ## An agent here is never fully autonomous
 
 `AgentPassport` refuses to be constructed with the autonomy class where a human
