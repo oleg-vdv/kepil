@@ -1,10 +1,15 @@
-"""Комплект документации по приказу № 95/НҚ и маркировка по ст. 21.
+"""Комплект документации на систему ИИ: движок отдельно, тексты отдельно.
 
 Документы собираются из паспорта агента, описания профессии и журнала действий:
 комплаенс, набранный руками, расходится с реальностью на второй неделе, а
 собранный из журнала — не может.
+
+Открытая часть содержит универсальный пакет по международной практике. Пакеты
+под конкретное законодательство кладутся в каталог данных (см. packs.py).
 """
 
-from .generator import Document, build, missing_marks
+from .generator import Document, available_packs, build, missing_marks
+from .packs import Pack, installed_dir
 
-__all__ = ["Document", "build", "missing_marks"]
+__all__ = ["Document", "Pack", "build", "missing_marks", "available_packs",
+           "installed_dir"]

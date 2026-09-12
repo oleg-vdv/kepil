@@ -1,16 +1,12 @@
-"""Комплект документации на систему искусственного интеллекта.
-
-Приказ Министра искусственного интеллекта и цифрового развития РК № 95/НҚ от
-25 февраля 2026 года определяет состав документации по уровню риска:
-
-* минимальный — документ на систему и документ по управлению рисками;
-* средний — плюс документация на библиотеки данных;
-* высокий — плюс политика принципов ИИ в организации.
+"""Сборка комплекта документации на систему искусственного интеллекта.
 
 Документы собираются из того, что система знает о себе: паспорта агента,
 описания профессии и журнала действий. Это принципиально: комплаенс, набранный
 руками в текстовом редакторе, расходится с реальностью на второй неделе, а
 собранный из журнала — не может.
+
+Тексты живут отдельно от движка (см. packs.py). Здесь только подстановка
+значений и разворачивание директив вида `@steps` в таблицы и списки.
 
 Ничего не выдумывается: там, где данных нет, в документе остаётся явная
 пометка о том, что заполняет человек.
@@ -18,28 +14,16 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from ..professions.definition import ProfessionDefinition
+from .packs import Pack, get as get_pack, load_all as load_packs
 
 TODO = "**Заполняет человек:** "
-
-REQUIRED: dict[str, list[str]] = {
-    "минимальный": ["system", "risk"],
-    "средний": ["system", "risk", "data"],
-    "высокий": ["system", "risk", "data", "policy"],
-}
-
-TITLES = {
-    "system": "Документ на систему искусственного интеллекта",
-    "risk": "Документ по управлению рисками",
-    "data": "Документация на библиотеки данных",
-    "policy": "Политика принципов искусственного интеллекта в организации",
-    "classification": "Обоснование классификации",
-    "marking": "Маркировка результатов",
-}
+DIRECTIVE = re.compile(r"^@(\w+)$")
 
 
 @dataclass
@@ -51,240 +35,116 @@ class Document:
     required: bool
 
 
-def _head(title: str, passport: dict[str, Any], org: dict[str, str]) -> list[str]:
+# --- подстановки ------------------------------------------------------------
+
+def _values(definition: ProfessionDefinition, passport: dict[str, Any],
+            org: dict[str, str], stats: dict[str, Any]) -> dict[str, str]:
+    review = passport.get("risk_review") or {}
+    version = passport.get("version") or {}
+    return {
+        "agent_id": passport.get("agent_id", "—"),
+        "org_name": org.get("name", "—"),
+        "org_bin": org.get("bin", "—"),
+        "operator": org.get("operator", "—"),
+        "version": version.get("agent", "—"),
+        "released": version.get("released_at", "—"),
+        "date": date.today().isoformat(),
+        "passport_hash": passport.get("passport_hash", "—"),
+        "risk_class": passport.get("risk_class", "—"),
+        "autonomy_class": passport.get("autonomy_class", "—"),
+        "purpose": definition.purpose,
+        "summary": definition.summary or TODO + "краткое описание области применения.",
+        "risk_rationale": definition.risk_rationale or TODO + "обоснование классификации.",
+        "deliverable": definition.deliverable or "—",
+        "review_last": review.get("last", "—"),
+        "review_next": review.get("next_due", "—"),
+        "actions": str(stats.get("actions", 0)),
+        "denied": str(stats.get("denied", 0)),
+        "confirmations": str(stats.get("confirmations", 0)),
+        "returns": str(stats.get("returns", 0)),
+        "journal": "подтверждена" if stats.get("journal_ok") else "ТРЕБУЕТ ПРОВЕРКИ",
+        "todo": TODO,
+    }
+
+
+def _bullets(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items) if items else "- не заданы"
+
+
+def _code_bullets(items: list[str]) -> str:
+    return "\n".join(f"- `{item}`" for item in items) if items else "- не заданы"
+
+
+def _directive(name: str, definition: ProfessionDefinition) -> str:
+    if name == "steps":
+        rows = "\n".join(
+            f"| {i + 1} | {s.title} | `{s.action}` | {s.system or '—'} |"
+            for i, s in enumerate(definition.steps))
+        return ("| № | Шаг | Действие | Внешняя система |\n|---|---|---|---|\n" + rows
+                if rows else "Шаги не заданы.")
+    if name == "boundaries":
+        return _bullets(definition.does_not)
+    if name == "intake":
+        return _bullets(definition.intake)
+    if name == "irreversible":
+        return _code_bullets(definition.irreversible)
+    if name == "forbidden":
+        return _code_bullets(definition.forbidden_actions)
+    if name == "limits":
+        return ("\n".join(f"- `{k}` — не более {v:g}" for k, v in definition.limits.items())
+                if definition.limits else TODO + "лимиты не заданы в описании профессии.")
+    if name == "systems":
+        return _code_bullets(definition.systems())
+    return f"(неизвестная директива @{name})"
+
+
+def _render_block(block: str, values: dict[str, str],
+                  definition: ProfessionDefinition) -> str:
+    match = DIRECTIVE.match(block.strip())
+    if match:
+        return _directive(match.group(1), definition)
+    try:
+        return block.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return block           # текст с фигурными скобками не должен ломать сборку
+
+
+def _header(title: str, values: dict[str, str]) -> list[str]:
     return [
         f"# {title}", "",
-        f"**Система:** {passport['agent_id']}  ",
-        f"**Владелец системы:** {org.get('name', '—')}, БИН {org.get('bin', '—')}  ",
-        f"**Версия агента:** {passport['version']['agent']} от {passport['version']['released_at']}  ",
-        f"**Дата документа:** {date.today().isoformat()}  ",
-        f"**Отпечаток паспорта:** `{passport.get('passport_hash', '—')}`", "",
+        f"**Система:** {values['agent_id']}  ",
+        f"**Владелец системы:** {values['org_name']}, БИН {values['org_bin']}  ",
+        f"**Версия агента:** {values['version']} от {values['released']}  ",
+        f"**Дата документа:** {values['date']}  ",
+        f"**Отпечаток паспорта:** `{values['passport_hash']}`", "",
     ]
 
 
-def _system_doc(definition: ProfessionDefinition, passport: dict[str, Any],
-                org: dict[str, str], stats: dict[str, Any]) -> str:
-    steps = "\n".join(
-        f"| {i + 1} | {s.title} | `{s.action}` | {s.system or '—'} |"
-        for i, s in enumerate(definition.steps))
-    boundaries = "\n".join(f"- {x}" for x in definition.does_not)
-    lines = _head(TITLES["system"], passport, org) + [
-        "## 1. Назначение", "", definition.purpose, "",
-        "## 2. Область применения", "",
-        definition.summary or f"{TODO}краткое описание области применения.", "",
-        "## 3. Функциональные возможности", "",
-        "| № | Шаг | Действие | Внешняя система |",
-        "|---|---|---|---|", steps, "",
-        "## 4. Ограничения: чего система не делает", "", boundaries, "",
-        "## 5. Классификация", "",
-        f"- Степень риска: **{passport['risk_class']}** (ст. 17 п. 1 Закона № 230-VIII)",
-        f"- Степень автономности: **{passport['autonomy_class']}** (ст. 17 п. 2)",
-        f"- Обоснование: {definition.risk_rationale or TODO + 'обоснование классификации.'}",
-        "",
-        "## 6. Контроль со стороны человека", "",
-        "Действия, требующие подтверждения человеком до выполнения:", "",
-        "\n".join(f"- `{p}`" for p in definition.irreversible) or "- не заданы", "",
-        "Действия, запрещённые системе безусловно:", "",
-        "\n".join(f"- `{p}`" for p in definition.forbidden_actions) or "- не заданы", "",
-        "Возможность отмены решения человеком обеспечена технически: необратимое "
-        "действие не выполняется до подтверждения, эксплуатация может быть "
-        "приостановлена немедленно (ст. 18 п. 2).", "",
-        "## 7. Прозрачность (ст. 21)", "",
-        "Пользователь информируется о том, что услуга оказывается с использованием "
-        "системы искусственного интеллекта. Результаты сопровождаются маркировкой в "
-        "машиночитаемой форме и видимым предупреждением.", "",
-        "## 8. Эксплуатация: фактические показатели", "",
-        f"- Записей в журнале действий: {stats.get('actions', 0)}",
-        f"- Из них отклонено шлюзом: {stats.get('denied', 0)}",
-        f"- Подтверждений человеком: {stats.get('confirmations', 0)}",
-        f"- Возвратов человеком: {stats.get('returns', 0)}",
-        f"- Целостность журнала на дату документа: "
-        f"{'подтверждена' if stats.get('journal_ok') else 'ТРЕБУЕТ ПРОВЕРКИ'}", "",
-        "## 9. Поддержка пользователей (ст. 15 п. 2 пп. 4)", "",
-        f"{TODO}контакты службы поддержки и порядок обращения.", "",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _risk_doc(definition: ProfessionDefinition, passport: dict[str, Any],
-              org: dict[str, str], stats: dict[str, Any]) -> str:
-    sources = [
-        ("Персональные данные", "обработка данных клиентов и контрагентов",
-         "маскирование до отправки во внешнюю модель; чувствительные запросы "
-         "обрабатываются локально; значения в журнал не попадают"),
-        ("Необратимое действие", "отправка, публикация или запись во внешнюю систему",
-         "подтверждение человеком до выполнения; компенсирующее действие описано "
-         "для каждого типа"),
-        ("Выход за периметр", "обращение к системе вне белого списка",
-         "шлюз отклоняет действие до обращения к модели"),
-        ("Превышение расхода", "исчерпание лимита на обращения к моделям",
-         "лимит в мандате, списание на каждом действии, остановка заказа"),
-        ("Недостоверный результат", "ошибка модели в подготовленном документе",
-         "приёмка результата человеком, фиксация возвратов, разбор инцидента"),
-        ("Изменение журнала", "правка записей задним числом",
-         "цепочка хешей, фиксация корня, независимая проверка сторонним "
-         "инструментом"),
-    ]
-    catalog = "\n".join(f"| {name} | {what} | {how} |" for name, what, how in sources)
-    limits = "\n".join(f"- `{k}` — не более {v:g}" for k, v in definition.limits.items())
-    review = passport.get("risk_review") or {}
-    lines = _head(TITLES["risk"], passport, org) + [
-        "## 1. Порядок управления рисками", "",
-        "Управление рисками — непрерывный процесс на протяжении всего жизненного "
-        "цикла системы (ст. 18 п. 1). Риски выявляются при выпуске версии, "
-        "пересматриваются не реже одного раза в год и при каждом инциденте.", "",
-        f"- Последний пересмотр: {review.get('last', '—')}",
-        f"- Следующий пересмотр не позднее: {review.get('next_due', '—')}", "",
-        "## 2. Каталог источников риска и меры контроля", "",
-        "| Источник риска | В чём состоит | Мера контроля |",
-        "|---|---|---|", catalog, "",
-        "## 3. Количественные ограничения", "",
-        limits or f"{TODO}лимиты не заданы в описании профессии.", "",
-        "## 4. План обработки рисков", "",
-        "1. Выявление: проверки шлюза фиксируют каждое отклонение в журнале.",
-        "2. Оценка: доля отклонений и возвратов считается по журналу на любую дату.",
-        "3. Реагирование: при превышении порога инцидентов агент приостанавливается.",
-        "4. Проверка результата: изменение описания профессии проходит валидацию, "
-        "запрещённые шаги не сохраняются.", "",
-        "## 5. Действия при выявлении угрозы (ст. 18 п. 2)", "",
-        "Эксплуатация приостанавливается немедленно: паспорт агента переводится в "
-        "статус «приостановлен», после чего шлюз отклоняет любые действия. "
-        "Незавершённые необратимые действия не выполняются. По каждому выполненному "
-        "шагу предусмотрено компенсирующее действие, кроме явно необратимых.", "",
-        "## 6. Инциденты", "",
-        f"- Зафиксировано отклонений шлюзом: {stats.get('denied', 0)}",
-        f"- Возвратов человеком: {stats.get('returns', 0)}",
-        f"{TODO}разбор инцидентов за период, если они были.", "",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _data_doc(definition: ProfessionDefinition, passport: dict[str, Any],
-              org: dict[str, str]) -> str:
-    inputs = "\n".join(f"- {x}" for x in definition.intake)
-    lines = _head(TITLES["data"], passport, org) + [
-        "## 1. Состав данных", "",
-        "Система работает с данными, которые передаёт заказчик для выполнения "
-        "конкретного заказа:", "", inputs or f"{TODO}перечень входных данных.", "",
-        "## 2. Источник и правомерность", "",
-        f"{TODO}основание обработки: договор с заказчиком, согласие субъекта "
-        "персональных данных или иное основание по законодательству о "
-        "персональных данных.", "",
-        "## 3. Обучение моделей", "",
-        "Данные заказчика не используются для обучения моделей. Обучение на "
-        "произведениях допускается только при отсутствии запрета правообладателя, "
-        "выраженного в машиночитаемой форме (ст. 23 п. 5).", "",
-        "## 4. Хранение и локализация", "",
-        "Данные и журнал действий хранятся на инфраструктуре в Республике "
-        "Казахстан. В журнал попадают типы и количества, значения персональных "
-        "данных — нет.", "",
-        "## 5. Изготовитель библиотеки данных (ст. 27 п. 5)", "",
-        f"{TODO}сведения об изготовителе в машиночитаемой форме, если библиотека "
-        "данных формируется.", "",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _policy_doc(passport: dict[str, Any], org: dict[str, str]) -> str:
-    principles = [
-        ("Законность", "система создаётся и эксплуатируется по требованиям "
-                       "законодательства Республики Казахстан"),
-        ("Справедливость и равенство", "запрещены дискриминация и оценка людей по "
-                                       "социальному поведению (ст. 17 п. 3)"),
-        ("Прозрачность и объяснимость", "пользователь информируется о применении ИИ "
-                                        "и вправе получить разъяснение результата "
-                                        "и данных, на которых он основан (ст. 16)"),
-        ("Ответственность и подконтрольность", "владелец системы обеспечивает "
-                                               "постоянный контроль на всех этапах "
-                                               "жизненного цикла (ст. 8)"),
-        ("Приоритет человека", "автономия и свобода воли человека сохраняются: "
-                               "необратимое действие требует подтверждения"),
-        ("Защита данных", "персональные данные защищаются, значения не покидают "
-                          "периметр в открытом виде"),
-        ("Безопасность", "исключается неконтролируемое поведение: единственная точка "
-                         "выхода наружу, лимиты, немедленная остановка"),
-    ]
-    table = "\n".join(f"| {name} | {how} |" for name, how in principles)
-    lines = _head(TITLES["policy"], passport, org) + [
-        "## 1. Принципы и способ их соблюдения", "",
-        "| Принцип | Как обеспечивается |", "|---|---|", table, "",
-        "## 2. Запрещённые функциональные возможности (ст. 17 п. 3)", "",
-        "Организация не создаёт и не эксплуатирует системы, использующие "
-        "манипулятивные методы, уязвимость человека, социальную оценку, "
-        "неправомерную обработку персональных данных, биометрическую "
-        "классификацию для дискриминации и определение эмоций без согласия.", "",
-        "## 3. Ответственные лица", "",
-        f"- Владелец системы: {org.get('name', '—')}, БИН {org.get('bin', '—')}",
-        f"- Подтверждает действия агентов: {org.get('operator', '—')}",
-        f"{TODO}ответственный за обработку персональных данных.", "",
-        "## 4. Порядок пересмотра", "",
-        "Политика пересматривается не реже одного раза в год вместе с "
-        "пересмотром рисков и при изменении законодательства.", "",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _classification_doc(definition: ProfessionDefinition, passport: dict[str, Any],
-                        org: dict[str, str]) -> str:
-    lines = _head(TITLES["classification"], passport, org) + [
-        "## Степень риска (ст. 17 п. 1)", "",
-        f"Присвоена: **{passport['risk_class']}**.", "",
-        f"Обоснование: {definition.risk_rationale or TODO + 'обоснование.'}", "",
-        "Классификацию проводит собственник или владелец системы самостоятельно "
-        "в соответствии с правилами классификации цифровых объектов. Настоящий "
-        "документ фиксирует принятое решение и его основания.", "",
-        "## Степень автономности (ст. 17 п. 2)", "",
-        f"Присвоена: **{passport['autonomy_class']}**.", "",
-        "Основание: корректировка и отмена решений человеком возможны технически. "
-        "Каждое необратимое действие останавливается до подтверждения; журнал "
-        "фиксирует, кто и когда подтвердил. Системы высокой автономности "
-        "организацией не создаются и не эксплуатируются.", "",
-        "## Проверяемость", "",
-        "Соответствие заявленной автономности подтверждается журналом действий: "
-        "по каждому необратимому действию в нём присутствует запись о решении "
-        "человека. Целостность журнала проверяется независимым инструментом.", "",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _marking_doc(passport: dict[str, Any], org: dict[str, str]) -> str:
-    lines = _head(TITLES["marking"], passport, org) + [
-        "## Машиночитаемая форма (ст. 21 п. 2, ст. 22)", "",
-        "```json", '{', f'  "generated_by": "{passport["agent_id"]}",',
-        f'  "operator_bin": "{org.get("bin", "—")}",',
-        '  "ai_generated": true', '}', "```", "",
-        "## Видимое предупреждение", "",
-        "> Результат подготовлен с использованием системы искусственного "
-        "интеллекта (ст. 21 Закона Республики Казахстан № 230-VIII).", "",
-        "## Где размещается", "",
-        "- в файле результата — машиночитаемая метка;",
-        "- в документе и сопроводительном письме — видимая строка;",
-        "- в договоре с заказчиком — уведомление о применении ИИ (ст. 21 п. 1).", "",
-    ]
-    return "\n".join(lines) + "\n"
-
+# --- сборка -----------------------------------------------------------------
 
 def build(definition: ProfessionDefinition, passport: dict[str, Any],
-          org: dict[str, str], stats: dict[str, Any] | None = None) -> list[Document]:
-    """Комплект для одной версии агента: обязательное по уровню риска плюс полезное."""
-    stats = stats or {}
-    required = REQUIRED.get(passport.get("risk_class", "средний"), REQUIRED["средний"])
-    bodies = {
-        "system": lambda: _system_doc(definition, passport, org, stats),
-        "risk": lambda: _risk_doc(definition, passport, org, stats),
-        "data": lambda: _data_doc(definition, passport, org),
-        "policy": lambda: _policy_doc(passport, org),
-        "classification": lambda: _classification_doc(definition, passport, org),
-        "marking": lambda: _marking_doc(passport, org),
-    }
-    documents = []
-    for key, render in bodies.items():
+          org: dict[str, str], stats: dict[str, Any] | None = None,
+          pack_id: str | None = None) -> list[Document]:
+    """Комплект для одной версии агента по выбранному пакету документации."""
+    pack: Pack = get_pack(pack_id)
+    values = _values(definition, passport, org, stats or {})
+    required = pack.required(passport.get("risk_class", "средний"))
+
+    documents: list[Document] = []
+    for spec in pack.documents:
+        lines = _header(spec["title"].format(**values), values)
+        for section in spec.get("sections", []):
+            heading = section.get("heading")
+            if heading:
+                lines += [f"## {heading.format(**values)}", ""]
+            for block in section.get("blocks", []):
+                lines += [_render_block(block, values, definition), ""]
         documents.append(Document(
-            key=key,
-            title=TITLES[key],
-            filename=f"{passport['agent_id']}-{key}.md",
-            body=render(),
-            required=key in required,
+            key=spec["key"],
+            title=spec["title"].format(**values),
+            filename=f"{values['agent_id']}-{spec['key']}.md",
+            body="\n".join(lines).rstrip() + "\n",
+            required=spec["key"] in required,
         ))
     return documents
 
@@ -292,3 +152,7 @@ def build(definition: ProfessionDefinition, passport: dict[str, Any],
 def missing_marks(documents: list[Document]) -> int:
     """Сколько мест в комплекте ждут человека."""
     return sum(doc.body.count(TODO) for doc in documents)
+
+
+def available_packs() -> dict[str, Pack]:
+    return load_packs()

@@ -1,136 +1,118 @@
 # Kepil
 
-**Оператор ИИ-агентов.** Агенты выполняют бюрократическую работу, человек подтверждает
-всё необратимое, каждое действие остаётся в неизменяемом журнале с паспортом агента.
+**Accountability layer for AI agents.** Give every agent a passport, put every
+action through one gate, and keep a log that cannot be rewritten afterwards.
 
-Мы не продаём доступ к панели. Мы принимаем на себя роль владельца ИИ-системы по
-Закону РК «Об искусственном интеллекте» № 230-VIII и отвечаем за результат.
+> 53% of organisations have had an AI agent exceed its intended permissions.
+> 48% of agents in production run with no monitoring at all. Only 22% treat an
+> agent as an entity with its own identity.
+> — Cloud Security Alliance and State of AI Agent Security, 2026
 
-## Три правила, из которых следует архитектура 
-
-1. **Агент никогда не держит ЭЦП клиента.** С 11.08.2025 ЭЦП выдаётся только по
-   биометрии и не передаётся по доверенности. Агент готовит и подводит к кнопке —
-   кнопку нажимает человек. См. `docs/decisions/ADR-0001-no-client-ecp.md`.
-2. **Средняя автономность по умолчанию.** Всё необратимое проходит очередь
-   подтверждений; всё обратимое агент делает сам. См. `ADR-0002`.
-3. **Журнал важнее интерфейса.** Append-only, цепочка SHA-256, подпись ЭЦП
-   организации, хранение ≥ 3 лет.
-
-## Модули
-
-| Модуль | Назначение | Состояние |
-|---|---|---|
-| `registry` | Паспорт агента и реестр выпущенных версий, статусы, срок пересмотра рисков | работает |
-| `mandate` | Машиночитаемая доверенность на заказ: действия, системы, лимиты, срок | работает |
-| `gateway` | Единственная точка выхода агента наружу; проверка мандата и лимитов | работает |
-| `journal` | Цепочка SHA-256, фиксация корня, верификация, выгрузка | работает |
-| `notify` | Подтверждения в Telegram: карточка с кнопками, приём нажатий | работает |
-| `meter` | Счётчик: действия, отказы, токены, стоимость, замещённое время | работает |
-| `compliance` | Комплект по приказу № 95/НҚ, классификация, маркировка по ст. 21 | работает |
-| `professions` | Профессии как описания: 5 встроенных, свои создаются в панели | работает |
-| `orders` | Жизненный цикл заказа: мандат, шаги, подтверждения, статусы | работает |
-| `admin` | Панель оператора: заказы, профессии, агенты, журнал, настройки | работает |
-
-## Подтверждения приходят в телефон
-
-Система, которая требует сидеть за ноутбуком, — не автоматизация. Поэтому
-необратимое действие приходит карточкой в Telegram: что за шаг, какому клиенту,
-что уйдёт наружу и что будет, если отменить. Две кнопки — «Подтвердить» и
-«Вернуть», решение принимается с телефона.
-
-Включается за пять минут: токен у @BotFather, свой `Id` у @userinfobot, оба
-поля в разделе «Настройки». Пока канал не настроен, карточки просто ждут в
-панели — система работает как раньше. Нажатие принимается только из указанного
-чата, а сбой канала не может сломать заказ: карточка в панели остаётся.
-
-Порядок развёртывания — в [docs/DEPLOY.md](docs/DEPLOY.md): сначала телефон,
-потом сервер в Казахстане.
-
-## Панель оператора
+Kepil is what the other 78% are missing: identity, mandate, enforcement,
+evidence — and the part nobody else does, **undo**.
 
 ```bash
-python -m kepil.admin
+pip install kepil
+python -m kepil.admin        # http://localhost:7317
 ```
 
-Открывается на `http://localhost:7317`. Всё состояние — JSON-файлы в каталоге
-`data` (меняется переменной `KEPIL_DATA`), никакой базы данных.
-
-Что в панели можно делать:
-
-- **Заказы** — создать заказ на любую профессию, выполнять шаги, видеть решения
-  шлюза и подтверждать необратимые действия. Отказ показывается с причиной:
-  чужая система, запрещённое действие, исчерпанный лимит.
-- **Профессии** — изменить любую: шаги, границы «не делает», лимиты, что требует
-  человека, что запрещено всегда, правила отката. Можно скопировать встроенную
-  и создать свою — код при этом не трогается.
-- **Агенты** — паспорта версий; правится только статус, потому что приостановка
-  должна действовать немедленно (ст. 18 п. 2), а история — оставаться нетронутой.
-- **Журнал** — записи с цепочкой хешей, проверка целостности, выгрузка JSONL для
-  независимой проверки: `npx @proofbyte/agent-trace verify journal.jsonl`.
-- **Счётчик** — действия, отказы, решения человека, токены, стоимость, доля
-  работы без человека и замещённое время. Считается по журналу, а не по отдельной
-  базе: цифры и доказательства обязаны происходить из одного источника.
-- **Комплаенс** — комплект по приказу № 95/НҚ, собранный из паспорта, описания
-  профессии и журнала: состав зависит от степени риска, скачивается архивом.
-  Там, где данных нет, в документе стоит пометка «заполняет человек» — система
-  не выдумывает недостающее.
-- **Настройки** — организация-оператор, которая указывается в паспортах как
-  владелец системы и несёт ответственность по ст. 15.
-
-Отдельно на карточке заказа: **остановка** (ст. 18 п. 2) снимает незавершённое
-действие из очереди и пишет причину в журнал, **откат** выполняет компенсирующее
-действие из описания профессии, а необратимые шаги честно отвечают, что откат
-невозможен.
-
-## Почему цепочки хешей мало
-
-Цепочку можно переписать целиком и пересчитать все хеши — тогда она сойдётся.
-Поэтому корень периодически фиксируется отдельной записью (кнопка «Зафиксировать
-корень» в журнале). Проверка сверяет и цепочку, и все зафиксированные корни:
-подменённый журнал не пройдёт, потому что старого корня в нём не найти.
-
-Юридическую силу якорю даёт подпись ЭЦП организации от НУЦ РК — поле под неё
-предусмотрено, сама подпись подключается при развёртывании.
-
-## Профессии
-
-Профессия — это описание (`professions/definitions/*.json`), а не класс. Новая
-профессия не требует кода: положите файл или создайте её в панели.
-
-| Профессия | Что делает |
-|---|---|
-| `leads` | Входящие заявки из WhatsApp и с сайта: ответ, квалификация, CRM, передача горячих человеку |
-| `automation` | Обследование процесса и проект автоматизации с оценкой рисков |
-| `primary_docs` | Сверка входящих накладных и счетов-фактур, три корзины решений, контроль сроков |
-| `ai_audit` | Инвентаризация применения ИИ и комплект документации по приказу № 95/НҚ |
-| `tender` | Отбор закупок, вердикт о проходимости, сборка пакета документов |
-
-Опасное описанием не задаётся: класс автономности всегда «средняя», необратимые
-действия всегда уходят человеку, а шлюз сверяет каждое действие с мандатом
-независимо от того, что написано в описании профессии.
-
-## Что переиспользуется
-
-- [AI-Gateway](https://github.com/oleg-vdv/AI-Gateway) — шлюз обращений к моделям,
-  политики mask/block/allow, журнал с цепочкой SHA-256, детекторы ИИН/БИН,
-  маршрутизация чувствительных запросов в локальную модель, клиент 1С, MCP-сервер.
-- [AutoGov](https://github.com/oleg-vdv/AutoGov) — инвентаризация теневых
-  автоматизаций у клиента; продаётся как платный аудит-вход.
-- [agent-trace](https://github.com/oleg-vdv/agent-trace) — экспорт пакета доказательств.
-- [AffectGuard-HRI](https://github.com/oleg-vdv/affectguard-hri) — паттерн защитной
-  оболочки, которую сценарий не может переопределить.
-
-## Требования
-
-Python 3.11+, стандартная библиотека. Внешние зависимости не добавляются:
-реестр доверенных цифровых объектов требует исключительных прав на ПО и
-доли локализации не менее 80 % (приказ № 279/НҚ, в силе с 12.07.2026).
-
-## Документы
-
-- `docs/TZ.md` — техническое задание
-- `docs/legal-map.md` — карта норм РК и что их закрывает в коде
-- `schemas/` — JSON Schema паспорта, мандата и записи журнала
+Русская версия: [README.ru.md](README.ru.md)
 
 ---
-© Kepil. Все права защищены. Проприетарный код, публикация не предполагается.
+
+## What it does
+
+**Passport.** Every agent version gets an immutable card: who built it, who runs
+it, what it does, what it will *never* do, its risk class, its autonomy class,
+its limits, and when its risks are due for review. A new version is a new card;
+the old one is kept forever.
+
+**Mandate.** A machine-readable power of attorney for one job: allowed actions,
+allowed systems, spending limits, a validity window, and which action types must
+be confirmed by a human. Anything not explicitly allowed is refused.
+
+**Gate.** The single point through which an agent touches the outside world.
+Every action is checked against the mandate *before* a model is even called.
+Fail-closed: any error inside the check means refusal, never a pass.
+
+**Journal.** Append-only JSONL where every record carries the hash of the one
+before it. Editing or deleting a record is detectable — by anyone, using an
+independent implementation:
+
+```bash
+npx @proofbyte/agent-trace verify data/journal.jsonl
+```
+
+**Undo.** The journal is a graph of actions, and every profession declares its
+compensating action. Kepil walks that graph backwards and stops honestly at the
+first step that cannot be undone. Agent platforms record what happened; this one
+puts it back.
+
+**Confirmations on your phone.** Irreversible actions arrive in Telegram with
+two buttons — approve or return — so being accountable does not mean sitting at
+a laptop.
+
+## An agent here is never fully autonomous
+
+`AgentPassport` refuses to be constructed with the autonomy class where a human
+can no longer cancel a decision. That is a deliberate architectural limit rather
+than a missing feature — see
+[ADR-0002](docs/decisions/ADR-0002-medium-autonomy.md). The gate enforces the
+same rule regardless of what a profession definition claims.
+
+## Professions: behaviour as data, not code
+
+An agent's job is a JSON description: ordered steps, boundaries, limits,
+irreversible action patterns, rollback rules. Adding a new kind of work means
+adding a file — or filling in a form in the panel. The dangerous parts stay in
+code and under test.
+
+Five ship with the project: inbound leads, process automation, bookkeeping
+documents, AI-adoption audit, public-procurement packages.
+
+## The panel
+
+`python -m kepil.admin` opens an operator console: orders, professions, agent
+passports, a meter (actions, tokens, cost, human time replaced), the compliance
+generator, the journal with chain verification and anchoring, and settings.
+
+State is plain JSON files under `KEPIL_DATA` (default `./data`). No database:
+you can open them, read them, and attach them to a dispute.
+
+## Compliance packs
+
+Documentation requirements differ by country and change faster than code, so the
+texts live outside the engine. The neutral pack shipped here follows
+international practice (ISO/IEC 42001, record-keeping in the spirit of the EU AI
+Act). Jurisdiction packs — for example Kazakhstan's AI Law No. 230-VIII with
+order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
+
+## Design rules
+
+- **Zero dependencies.** The core runs on the Python 3.11+ standard library, and
+  CI fails the build if a third-party import appears. That keeps Kepil
+  installable inside an air-gapped perimeter, and keeps the supply-chain attack
+  surface of a tool that sees every action at zero.
+- **Values never enter the journal** — only types, counts and hashes.
+- **The verifier is a separate implementation in another language.** Proof that
+  only its own author can check is not proof.
+
+## Related projects
+
+| Project | Role |
+|---|---|
+| [agent-trace](https://github.com/oleg-vdv/agent-trace) | Independent journal verification and evidence packs (MIT) |
+| [AI-Gateway](https://github.com/oleg-vdv/AI-Gateway) | PII and secret masking between your apps and external models |
+| [AutoGov](https://github.com/oleg-vdv/AutoGov) | Discovery of shadow automations and the credentials they can reach |
+
+## Status
+
+Alpha, 79 tests. Interfaces may still change. Nothing here is a legal opinion:
+before relying on generated documents, have them reviewed by a lawyer in your
+jurisdiction.
+
+## License
+
+AGPL-3.0-or-later. Running a network service built on Kepil obliges you to
+release your own source under the same terms — or to take a commercial licence.
+See [NOTICE.md](NOTICE.md).

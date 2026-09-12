@@ -1,9 +1,28 @@
 [project]
 name = "kepil"
-version = "0.1.0"
-description = "Оператор ИИ-агентов: паспорт, мандат, шлюз действий, журнал"
+version = "0.2.0"
+description = "Accountability layer for AI agents: passport, mandate, action gateway, tamper-evident journal"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Oleg Vdovenko" }]
+keywords = ["ai-agents", "governance", "audit-log", "compliance", "agent-identity"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Security",
+  "Topic :: System :: Monitoring",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/oleg-vdv/kepil"
+Issues = "https://github.com/oleg-vdv/kepil/issues"
+
+[project.scripts]
+kepil = "kepil.admin.app:serve"
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -14,6 +33,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+kepil = ["compliance/packs/*.json", "professions/definitions/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

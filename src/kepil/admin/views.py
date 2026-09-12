@@ -562,9 +562,9 @@ def meter_page(total, by_profession, by_agent, professions) -> str:
 
 # --- комплаенс --------------------------------------------------------------
 
-def compliance_index(items) -> str:
+def compliance_index(items, packs=None, selected=None) -> str:
     if not items:
-        return ('<h1>Комплаенс</h1><p class="lede">Комплект документации '
+        return ('<h1>Комплаенс</h1>{chooser}<p class="lede">Комплект документации '
                 'собирается по выпущенному паспорту агента.</p>'
                 '<div class="empty">Сначала создайте заказ — паспорт выпустится сам.</div>')
     cards = "".join(f"""
@@ -580,6 +580,20 @@ def compliance_index(items) -> str:
           <a href="/compliance/{e(item["agent_id"])}"><button>Открыть комплект</button></a>
         </div>
       </div>""" for item in items)
+    chooser = ""
+    if packs:
+        current = selected if selected in packs else "generic"
+        chips = []
+        for pack_id, pack in packs.items():
+            mark = "on" if pack_id == current else ""
+            chips.append(f'<a class="pill {mark}" href="/compliance?pack={e(pack_id)}">'
+                         f'{e(pack.name)}</a>')
+        missing = "" if len(packs) > 1 else (
+            '<div class="subtle">Пакет под законодательство Казахстана '
+            '(Закон № 230-VIII, приказ № 95/НҚ) не установлен. '
+            'Положите файл пакета в каталог данных, подкаталог <code>packs</code>.</div>')
+        chooser = (f'<h2>Пакет документации</h2><div class="row" style="margin-top:0">'
+                   f'{"".join(chips)}</div>{missing}')
     return f"""
 <h1>Комплаенс</h1>
 <p class="lede">Приказ № 95/НҚ от 25.02.2026: состав документации зависит от

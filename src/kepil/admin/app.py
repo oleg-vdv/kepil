@@ -263,7 +263,12 @@ def meter_view(_: Request) -> Response:
         professions.load_all()))
 
 
-def _compliance_set(agent_id: str):
+def _pack_id(request: "Request") -> str | None:
+    """Выбранный пакет документации; по умолчанию — встроенный универсальный."""
+    return request.query.get("pack") or request.params.get("pack") or None
+
+
+def _compliance_set(agent_id: str, pack_id: str | None = None):
     passport = agents.get(agent_id)
     if passport is None:
         raise KeyError(f"паспорт '{agent_id}' не найден")
@@ -273,14 +278,16 @@ def _compliance_set(agent_id: str):
     stats = {"actions": counters.actions, "denied": counters.denied,
              "confirmations": counters.confirmations, "returns": counters.returns,
              "journal_ok": orders.verify_journal()[0]}
-    return definition, compliance.build(definition, passport, agents.settings(), stats)
+    return definition, compliance.build(definition, passport, agents.settings(),
+                                        stats, pack_id)
 
 
-def compliance_index(_: Request) -> Response:
+def compliance_index(request: Request) -> Response:
+    pack_id = _pack_id(request)
     items = []
     for passport in agents.all_passports():
         try:
-            definition, documents = _compliance_set(passport["agent_id"])
+            definition, documents = _compliance_set(passport["agent_id"], pack_id)
         except KeyError:
             continue
         items.append({
@@ -291,11 +298,13 @@ def compliance_index(_: Request) -> Response:
             "total": len(documents),
             "todo": compliance.missing_marks(documents),
         })
-    return page("Комплаенс", "compliance", views.compliance_index(items))
+    return page("Комплаенс", "compliance",
+                views.compliance_index(items, compliance.available_packs(), pack_id))
 
 
 def compliance_view(request: Request) -> Response:
-    _, documents = _compliance_set(request.query["id"])
+    pack_id = _pack_id(request)
+    _, documents = _compliance_set(request.query["id"], pack_id)
     selected = request.query.get("doc") or documents[0].key
     body = next((d.body for d in documents if d.key == selected), documents[0].body)
     return page("Комплаенс", "compliance",
@@ -307,7 +316,7 @@ def compliance_download(request: Request) -> Response:
     import zipfile
 
     agent_id = request.query["id"]
-    _, documents = _compliance_set(agent_id)
+    _, documents = _compliance_set(agent_id, _pack_id(request))
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for document in documents:

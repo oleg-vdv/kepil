@@ -1,5 +1,7 @@
 """Счётчик, комплаенс, остановка с откатом и фиксация корня журнала."""
 
+import json
+
 import pytest
 
 from kepil import compliance, meter, orders
@@ -65,6 +67,11 @@ def test_meter_groups_by_profession_and_agent():
 
 # --- комплаенс --------------------------------------------------------------
 
+def _passport(profession="leads"):
+    """Паспорт появляется вместе с первым заказом профессии."""
+    return store.get(order_until_stop(profession).agent_id)
+
+
 def _documents(profession="leads"):
     order = order_until_stop(profession)
     passport = store.get(order.agent_id)
@@ -91,15 +98,55 @@ def test_documents_carry_real_data_not_placeholders():
     documents = {d.key: d.body for d in _documents()}
     assert "kepil.leads.v1" in documents["system"]
     assert "ТОО Kepil" in documents["system"]
-    assert "Приём входящей заявки" in documents["system"]
-    assert "не выгружает базу клиентов" in documents["system"]
-    assert "ст. 18 п. 2" in documents["risk"]
+    assert "Приём входящей заявки" in documents["system"], "шаги профессии подставлены"
+    assert "не выгружает базу клиентов" in documents["system"], "границы подставлены"
+    assert "приостанавливается немедленно" in documents["risk"]
 
 
 def test_marking_document_contains_both_forms():
     body = {d.key: d.body for d in _documents()}["marking"]
-    assert '"ai_generated": true' in body
-    assert "ст. 21" in body
+    assert '"ai_generated": true' in body, "машиночитаемая метка"
+    assert "искусственного интеллекта" in body, "видимое предупреждение"
+
+
+# --- пакеты документации ----------------------------------------------------
+
+def test_builtin_pack_is_jurisdiction_neutral():
+    """Открытая часть не должна тянуть за собой чужое законодательство."""
+    for document in _documents():
+        assert "230-VIII" not in document.body
+        assert "95/НҚ" not in document.body
+
+
+def test_installed_pack_is_picked_up(tmp_path, monkeypatch):
+    """Пакет под законодательство кладётся файлом и подхватывается без кода."""
+    from kepil.compliance import installed_dir
+    from kepil.compliance.packs import load_all
+
+    directory = installed_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "demo-law.json").write_text(json.dumps({
+        "id": "demo-law", "name": "Демо-юрисдикция",
+        "required_by_risk": {"средний": ["rule"]},
+        "documents": [{"key": "rule", "title": "Документ по статье 42",
+                       "sections": [{"heading": "Основание",
+                                     "blocks": ["Система {agent_id} соответствует статье 42.",
+                                                "@boundaries"]}]}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    assert "demo-law" in load_all()
+    documents = compliance.build(get_definition("leads"), _passport(),
+                                 store.settings(), {}, "demo-law")
+    assert len(documents) == 1
+    assert "статье 42" in documents[0].body
+    assert "kepil.leads.v1" in documents[0].body
+    assert "не подписывает" in documents[0].body or "не выгружает" in documents[0].body
+
+
+def test_unknown_pack_falls_back_to_builtin():
+    documents = compliance.build(get_definition("leads"), _passport(),
+                                 store.settings(), {}, "нет-такого-пакета")
+    assert [d.key for d in documents] == [d.key for d in _documents()]
 
 
 def test_gaps_are_marked_for_a_human():
