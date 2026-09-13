@@ -43,7 +43,7 @@ before it. Editing or deleting a record is detectable — by anyone, using an
 independent implementation:
 
 ```bash
-npx @proofbyte/agent-trace verify data/journal.jsonl
+npx proofbyte-agent-trace verify data/journal.jsonl
 ```
 
 **Undo.** The journal is a graph of actions, and every profession declares its

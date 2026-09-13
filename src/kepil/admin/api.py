@@ -137,7 +137,7 @@ def verify_journal() -> dict[str, Any]:
     ok, error = orders.verify_journal()
     records = sum(1 for _ in Journal(orders.journal_path()))
     return {"intact": ok, "problem": error, "records": records,
-            "independent_check": "npx @proofbyte/agent-trace verify <journal.jsonl>"}
+            "independent_check": "npx proofbyte-agent-trace verify <journal.jsonl>"}
 
 
 # --- маршрутизация ----------------------------------------------------------

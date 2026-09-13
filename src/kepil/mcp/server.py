@@ -105,7 +105,7 @@ def _verify_journal() -> str:
     ok, error = orders.verify_journal()
     if ok:
         return ("Целостность журнала подтверждена. Независимая проверка: "
-                "npx @proofbyte/agent-trace verify <путь к journal.jsonl>")
+                "npx proofbyte-agent-trace verify <путь к journal.jsonl>")
     return f"Целостность НАРУШЕНА: {error}"
 
 

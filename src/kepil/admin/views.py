@@ -449,7 +449,7 @@ def journal_page(records, state, entries, anchors="") -> str:
     return f"""
 <h1>Журнал</h1>
 <p class="lede">Только дописывается, каждая запись связана хешем с предыдущей.
-  Проверить может кто угодно: <code>npx @proofbyte/agent-trace verify</code></p>
+  Проверить может кто угодно: <code>npx proofbyte-agent-trace verify</code></p>
 {verdict}
 <div class="row" style="margin-top:0">
   <form class="inline" method="post" action="/journal/verify"><button class="primary">Проверить цепочку</button></form>
