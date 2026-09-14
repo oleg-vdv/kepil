@@ -311,6 +311,76 @@ def rollback(order: Order, step_id: str) -> tuple[bool, str]:
     return True, compensation
 
 
+def rollback_since(order: Order, minutes: int) -> dict[str, Any]:
+    """Вернуть состояние на N минут назад: проход по графу действий в обратную сторону.
+
+    Идём от последнего выполненного шага к более ранним и выполняем для каждого
+    компенсирующее действие. На первом шаге, который отменить нельзя, проход
+    останавливается — и это главное свойство: обещание отката, которое тихо не
+    сработало, хуже отсутствия отката. Поэтому возвращается и то, что откатили,
+    и то, что осталось, и причина остановки.
+    """
+    boundary = datetime.now() - timedelta(minutes=int(minutes))
+    done: list[dict[str, Any]] = []
+    blocked: dict[str, Any] | None = None
+
+    # Порядок графа задаёт последовательность выполнения, а не строка времени:
+    # отметки хранятся с точностью до секунды, и несколько шагов делят одну.
+    # Время решает только, попал ли шаг в окно.
+    candidates = [r for r in order.results
+                  if r["decision"] == Decision.ALLOW.value and not r.get("rolled_back")
+                  and r.get("at") and datetime.fromisoformat(r["at"]) >= boundary]
+
+    for row in reversed(candidates):
+        ok, message = rollback(order, row["step"])
+        if not ok:
+            blocked = {"step": row["step"], "title": row["title"], "reason": message}
+            break
+        done.append({"step": row["step"], "title": row["title"], "compensation": message})
+
+    remaining = [{"step": r["step"], "title": r["title"]} for r in candidates
+                 if not any(d["step"] == r["step"] for d in done)]
+
+    summary = {
+        "minutes": int(minutes),
+        "undone": done,
+        "blocked": blocked,
+        "remaining": remaining,
+        "considered": len(candidates),
+    }
+    Journal(journal_path()).append(JournalEntry(
+        agent_id=order.agent_id,
+        order_id=order.id,
+        mandate_id=order.mandate["mandate_id"],
+        step="rollback:window",
+        action={"type": "rollback:window", "target": None,
+                "minutes": int(minutes), "undone": len(done),
+                "blocked_at": blocked["step"] if blocked else None},
+        decision="allow",
+        human={"required": True, "approved": True, "confirmed_by": "operator",
+               "note": f"откат за {minutes} мин: отменено {len(done)}"
+                       + (f", остановлено на «{blocked['title']}»" if blocked else ""),
+               "at": datetime.now().isoformat(timespec="seconds")},
+    ))
+    order.save()
+    return summary
+
+
+def rollback_summary_text(summary: dict[str, Any]) -> str:
+    """Человеческая формулировка итога отката — одна и та же в панели и в тестах."""
+    if not summary["considered"]:
+        return f"За последние {summary['minutes']} мин отменять нечего."
+    parts = [f"Отменено действий: {len(summary['undone'])} из {summary['considered']}."]
+    if summary["blocked"]:
+        parts.append(f"Остановлено на шаге «{summary['blocked']['title']}»: "
+                     f"{summary['blocked']['reason']}.")
+        earlier = [r for r in summary["remaining"] if r["step"] != summary["blocked"]["step"]]
+        if earlier:
+            parts.append("Раньше него ничего не отменено: "
+                         + ", ".join(f"«{r['title']}»" for r in earlier) + ".")
+    return " ".join(parts)
+
+
 def verify_journal() -> tuple[bool, str | None]:
     """Проверка цепочки вместе с зафиксированными корнями."""
     return verify_with_anchors(Journal(journal_path()))

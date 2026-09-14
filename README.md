@@ -116,6 +116,18 @@ code and under test.
 Five ship with the project: inbound leads, process automation, bookkeeping
 documents, AI-adoption audit, public-procurement packages.
 
+## Undo that stops honestly
+
+An order's journal is a sequence of actions and every profession declares the
+compensating action for each, so the panel can walk it backwards: pick a window,
+and the pass runs from the last action towards earlier ones, stopping at the
+first one that cannot be undone. What will happen is shown **before** the button
+is pressed, naming the step where the pass will stop — an undo promise that
+quietly fails is worse than no undo at all. The result is recorded as an
+operator's decision, which is why neither the MCP server nor the JSON API can
+roll anything back: an agent undoing its own actions would be signing in
+somebody else's name.
+
 ## The panel
 
 `python -m kepil.admin` opens an operator console: orders, professions, agent
@@ -153,7 +165,7 @@ order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
 
 ## Status
 
-Alpha, 107 tests. Interfaces may still change. Nothing here is a legal opinion:
+Alpha, 115 tests. Interfaces may still change. Nothing here is a legal opinion:
 before relying on generated documents, have them reviewed by a lawyer in your
 jurisdiction.
 

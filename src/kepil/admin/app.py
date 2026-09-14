@@ -128,6 +128,23 @@ def order_rollback(request: Request) -> Response:
                 None if done else ("err", message))
 
 
+def order_rollback_window(request: Request) -> Response:
+    """Откат окна времени: сколько отменили и на чём проход остановился."""
+    order = orders.get(request.query["id"])
+    try:
+        minutes = int(request.form("minutes") or 60)
+    except ValueError:
+        minutes = 60
+    minutes = max(0, min(10080, minutes))                 # не дальше недели назад
+    summary = orders.rollback_since(order, minutes)
+    order = orders.get(order.id)
+    records = [r for r in Journal(orders.journal_path()) if r.get("order_id") == order.id]
+    text = orders.rollback_summary_text(summary)
+    body = views.order_page(order, order.definition(), views.journal_table(records), text)
+    return page(f"Заказ {order.id}", "orders", body,
+                ("err", text) if summary["blocked"] else ("ok", text))
+
+
 def order_reset(request: Request) -> Response:
     order = orders.get(request.query["id"])
     order.cursor, order.results, order.pending, order.status = 0, [], None, "new"
@@ -400,6 +417,7 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("POST", "/orders/<id>/stop", order_stop),
     ("POST", "/orders/<id>/resume", order_resume),
     ("POST", "/orders/<id>/rollback", order_rollback),
+    ("POST", "/orders/<id>/rollback-window", order_rollback_window),
     ("GET", "/professions", professions_list),
     ("POST", "/professions/new", profession_new),
     ("GET", "/professions/<id>", profession_view),

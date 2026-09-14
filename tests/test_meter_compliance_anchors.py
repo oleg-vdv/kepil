@@ -235,3 +235,127 @@ def test_rewritten_journal_is_caught_by_the_anchor():
 
     ok, error = verify_with_anchors(fresh)
     assert not ok and "якорь" in error
+
+
+# --- откат по времени -------------------------------------------------------
+
+def _run_to_the_end(profession):
+    """Проходит заказ целиком, подтверждая всё, что просит человека."""
+    order = orders.create(profession, {"name": "ТОО «Пример»", "bin": "987654321098"})
+    while True:
+        current = orders.get(order.id)
+        if current.pending:
+            orders.confirm(current, True)
+            continue
+        if orders.run_next(orders.get(order.id)) is None:
+            break
+    return orders.get(order.id)
+
+
+def test_rollback_since_walks_the_journal_backwards():
+    """Отменяются все обратимые шаги окна, начиная с последнего."""
+    order = _run_to_the_end("leads")
+    summary = orders.rollback_since(order, minutes=60)
+
+    assert summary["undone"], "ни один шаг не откачен"
+    done_steps = [row["step"] for row in summary["undone"]]
+    order_of_run = [r["step"] for r in order.results]
+    positions = [order_of_run.index(s) for s in done_steps]
+    assert positions == sorted(positions, reverse=True), "проход не в обратном порядке"
+
+
+def test_rollback_since_stops_at_the_first_irreversible_step():
+    """Необратимый шаг останавливает проход, и более ранние остаются нетронутыми."""
+    order = _run_to_the_end("tender")
+    definition = get_definition("tender")
+    reversible = [r for r in order.results if r["decision"] == "allow"]
+    # действие должно встречаться ровно раз, иначе проход остановится на другом шаге
+    counts = {r["action"]: sum(1 for x in reversible if x["action"] == r["action"])
+              for r in reversible}
+    victim = next(r for r in reversible[1:] if counts[r["action"]] == 1)
+    definition.rollback[victim["action"]] = ""        # объявляем шаг необратимым
+    from kepil.professions import save as save_profession
+    save_profession(definition)
+
+    summary = orders.rollback_since(orders.get(order.id), minutes=60)
+
+    assert summary["blocked"] is not None
+    assert summary["blocked"]["step"] == victim["step"]
+    assert summary["remaining"], "шаги до необратимого должны остаться неоткаченными"
+    after = orders.get(order.id)
+    earlier = [r for r in after.results if r["step"] in
+               {row["step"] for row in summary["remaining"]}]
+    assert all(not r.get("rolled_back") for r in earlier)
+
+
+def test_rollback_since_reports_what_it_could_not_undo():
+    """Итог называет шаг, на котором остановились, — молчаливого отката не бывает."""
+    order = _run_to_the_end("tender")
+    definition = get_definition("tender")
+    reversible = [r for r in order.results if r["decision"] == "allow"]
+    definition.rollback[reversible[-1]["action"]] = ""
+    from kepil.professions import save as save_profession
+    save_profession(definition)
+
+    summary = orders.rollback_since(orders.get(order.id), minutes=60)
+    text = orders.rollback_summary_text(summary)
+    assert "Остановлено на шаге" in text
+    assert summary["blocked"]["title"] in text
+    assert text.count(summary["blocked"]["title"]) == 1, "остановивший шаг назван дважды"
+
+
+def test_rollback_since_ignores_actions_outside_the_window():
+    """Окно — это окно: шаг старше границы не трогаем."""
+    order = _run_to_the_end("leads")
+    summary = orders.rollback_since(order, minutes=0)
+    assert summary["considered"] == 0
+    assert not summary["undone"]
+    assert "отменять нечего" in orders.rollback_summary_text(summary)
+
+
+def test_rollback_since_is_written_to_the_journal():
+    """Сам откат — тоже действие, и он попадает в журнал."""
+    order = _run_to_the_end("leads")
+    orders.rollback_since(order, minutes=60)
+    last = list(Journal(orders.journal_path()))[-1]
+    assert last["action"]["type"] == "rollback:window"
+    assert last["human"]["approved"] is True
+    ok, error = orders.verify_journal()
+    assert ok, error
+
+
+def test_preview_agrees_with_what_rollback_actually_does():
+    """Панель обещает ровно то, что делает движок.
+
+    Превью, разошедшееся с откатом, — то же несдержанное обещание, против
+    которого вся эта механика и строится.
+    """
+    from kepil.admin import views
+    order = _run_to_the_end("tender")
+    definition = get_definition("tender")
+    reversible = [r for r in order.results if r["decision"] == "allow"]
+    counts = {r["action"]: sum(1 for x in reversible if x["action"] == r["action"])
+              for r in reversible}
+    victim = next(r for r in reversible[1:] if counts[r["action"]] == 1)
+    definition.rollback[victim["action"]] = ""
+    from kepil.professions import save as save_profession
+    save_profession(definition)
+
+    order = orders.get(order.id)
+    done_rows = [r for r in order.results
+                 if r["decision"] == "allow" and not r.get("rolled_back")]
+    preview = views._window_preview(get_definition("tender"), done_rows)
+    summary = orders.rollback_since(order, minutes=60)
+
+    assert f"отменено действий: {len(summary['undone'])}".lower() in preview.lower()
+    assert summary["blocked"]["title"] in preview
+
+
+def test_preview_promises_everything_when_all_steps_are_reversible():
+    from kepil.admin import views
+    order = _run_to_the_end("leads")
+    done_rows = [r for r in order.results if r["decision"] == "allow"]
+    preview = views._window_preview(order.definition(), done_rows)
+    summary = orders.rollback_since(order, minutes=60)
+    assert summary["blocked"] is None
+    assert f"будет отменено {len(summary['undone'])}" in preview.lower()

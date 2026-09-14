@@ -9,6 +9,8 @@ from .service import (
     list_orders,
     resume,
     rollback,
+    rollback_since,
+    rollback_summary_text,
     run_next,
     stop,
     verify_journal,
@@ -16,5 +18,5 @@ from .service import (
 
 __all__ = [
     "Order", "create", "get", "list_orders", "run_next", "confirm",
-    "stop", "resume", "rollback", "verify_journal", "journal_path",
+    "stop", "resume", "rollback", "rollback_since", "rollback_summary_text", "verify_journal", "journal_path",
 ]

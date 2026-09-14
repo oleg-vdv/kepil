@@ -37,6 +37,17 @@ def test_confirmation_is_not_exposed_as_a_tool():
     assert "pending_confirmations" in names, "смотреть очередь можно, нажимать — нет"
 
 
+def test_rollback_is_not_exposed_as_a_tool():
+    """Откат записывается в журнал как решение оператора — значит его жмёт человек.
+
+    Инструмент, позволяющий модели отменить собственные действия, дал бы ей
+    возможность подписать чужим именем: в журнале осталась бы отметка о решении
+    оператора, которого не было.
+    """
+    names = {tool["name"] for tool in server.tool_list()}
+    assert not any("rollback" in n for n in names)
+
+
 def test_unknown_tool_answers_without_crashing():
     result = call("approve_everything")
     assert result["isError"] is True

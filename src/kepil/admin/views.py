@@ -10,6 +10,7 @@ import html
 from typing import Any
 
 from ..orders.service import STATUSES
+from ..professions.base import Profession
 from ..professions.definition import ProfessionDefinition
 from ..registry.store import STATUSES as AGENT_STATUSES
 from .theme import CSS
@@ -219,6 +220,23 @@ def order_page(order, definition, journal_rows, message: str = "") -> str:
         <div class="row"><button>Откатить</button></div>
       </form>
       {f'<div class="msg ok">{e(message)}</div>' if message else ''}
+    </div>
+
+    <h2>Вернуть состояние назад</h2>
+    <div class="card">
+      <p>Проход идёт по действиям в обратную сторону и останавливается на первом,
+        которое отменить нельзя. Что именно произойдёт — видно заранее:</p>
+      <div class="msg">{_window_preview(definition, done_rows)}</div>
+      <form method="post" action="/orders/{e(order.id)}/rollback-window">
+        <div class="cols"><div><label>Окно</label>
+          <select name="minutes">
+            <option value="15">последние 15 минут</option>
+            <option value="60" selected>последний час</option>
+            <option value="240">последние 4 часа</option>
+            <option value="1440">последние сутки</option>
+          </select></div></div>
+        <div class="row"><button class="danger">Откатить окно</button></div>
+      </form>
     </div>"""
     else:
         rollback_block = ""
@@ -264,6 +282,31 @@ def order_page(order, definition, journal_rows, message: str = "") -> str:
 <h2>Журнал заказа</h2>
 {journal_rows}
 """
+
+
+def _window_preview(definition: ProfessionDefinition,
+                    done_rows: list[dict[str, Any]]) -> str:
+    """Что сделает откат окна — сказанное до нажатия кнопки.
+
+    Обещание отката, которое молча не сработало, хуже отсутствия отката. Поэтому
+    граница прохода называется заранее и по имени шага.
+
+    Правило обратимости спрашивается у самой профессии, а не повторяется здесь:
+    превью, разошедшееся с движком, — это то же несдержанное обещание.
+    """
+    profession = Profession(definition)
+    undone: list[str] = []
+    for row in reversed(done_rows):
+        compensation = profession.rollback(row["action"])
+        if not compensation:
+            left = [r["title"] for r in done_rows
+                    if r["title"] not in undone and r["step"] != row["step"]]
+            stop = (f"Будет отменено действий: {len(undone)}. Проход остановится "
+                    f"на шаге «{e(row['title'])}» — это действие необратимо")
+            return stop + (f", и раньше него ничего отменено не будет: "
+                           f"{e(', '.join(left))}." if left else ".")
+        undone.append(row["title"])
+    return f"Все выполненные действия обратимы: будет отменено {len(undone)}."
 
 
 def _rollback_text(definition: ProfessionDefinition, action: str) -> str:
