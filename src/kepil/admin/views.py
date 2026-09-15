@@ -285,6 +285,26 @@ def order_page(order, definition, journal_rows, message: str = "") -> str:
 """
 
 
+def _boundaries_note(p: ProfessionDefinition) -> str:
+    """Что из границ проверяет шлюз, а что остаётся обещанием.
+
+    Граница без шаблона действия — заявление для человека, и это законно: смысл
+    фразы «не обещает цену» машине недоступен. Недопустимо другое — не сказать
+    об этом и позволить принять декларацию за механизм.
+    """
+    rows = p.boundaries()
+    if not rows:
+        return ""
+    declared = [b for b in rows if not b.enforced]
+    items = "".join(
+        f'<div class="w">{"проверяется шлюзом · " + e(b.pattern) if b.enforced else "только заявление"}'
+        f' — {e(b.text)}</div>' for b in rows)
+    head = (f"Проверяется шлюзом: {len(rows) - len(declared)} из {len(rows)}."
+            + (f" Остальные соблюдает человек: механизм проверить смысл фразы не может."
+               if declared else ""))
+    return f'<div class="msg">{e(head)}{items}</div>'
+
+
 def _window_preview(definition: ProfessionDefinition,
                     done_rows: list[dict[str, Any]]) -> str:
     """Что сделает откат окна — сказанное до нажатия кнопки.
@@ -465,8 +485,9 @@ def profession_form(p: ProfessionDefinition, problems: list[str] | None = None) 
   <textarea name="steps" rows="9">{e(chr(10).join(s.to_line() for s in p.steps))}</textarea>
 
   <div class="cols">
-    <div><label>Не делает<span class="hint">границы, по строке</span></label>
-      <textarea name="does_not" rows="5">{lines(p.does_not)}</textarea></div>
+    <div><label>Не делает<span class="hint">по строке: текст | шаблон действия, если шлюз может его проверить</span></label>
+      <textarea name="does_not" rows="5">{e(chr(10).join(b.to_line() for b in p.boundaries()))}</textarea>
+      {_boundaries_note(p)}</div>
     <div><label>Что нужно от клиента<span class="hint">по строке</span></label>
       <textarea name="intake" rows="5">{lines(p.intake)}</textarea></div>
   </div>

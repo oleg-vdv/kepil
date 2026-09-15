@@ -207,6 +207,40 @@ def journal_intact(_: Check) -> Answer:
     return Answer.closed("цепочка сходится, корни зафиксированы и подписаны", *evidence)
 
 
+def boundaries_enforced(_: Check) -> Answer:
+    """Границы из паспорта: какие проверяет шлюз, а какие остаются обещанием.
+
+    Паспорт объявляет, чего агент не делает никогда. Шлюз проверяет типы
+    действий, а не смысл фразы, поэтому часть границ исполнима, а часть — нет:
+    «не отправляет счета» выразимо как send:invoice, «не обещает цену от имени
+    компании» — нет, это про содержание.
+
+    Обе разновидности законны, незаконно их путать. Граница, которую никто не
+    проверяет, должна называться заявлением, иначе документ обещает механизм,
+    которого не существует.
+    """
+    defs = professions.load_all()
+    if not defs:
+        return Answer.gap("профессий нет")
+    enforced = declared = 0
+    only: list[str] = []
+    for definition in defs.values():
+        for boundary in definition.boundaries():
+            if boundary.enforced:
+                enforced += 1
+            else:
+                declared += 1
+                only.append(f"{definition.id}: {boundary.text}")
+    evidence = [f"исполняется шлюзом: {enforced}", f"остаётся заявлением: {declared}"]
+    if not declared:
+        return Answer.closed("каждая граница паспорта имеет исполняемый запрет", *evidence)
+    return Answer(NEEDS_HUMAN,
+                  f"границ без исполняемого запрета: {declared}. Их соблюдение "
+                  f"подтверждает человек, шлюз проверить смысл фразы не может: "
+                  + "; ".join(only[:4]) + ("…" if len(only) > 4 else ""),
+                  evidence)
+
+
 def inventory_present(_: Check) -> Answer:
     """Реестр систем: полнота проверяется человеком, состав — системой."""
     cards = _passports()
@@ -232,6 +266,7 @@ REGISTRY: dict[str, Callable[[Check], Answer]] = {
     "suspension_possible": suspension_possible,
     "journal_intact": journal_intact,
     "inventory_present": inventory_present,
+    "boundaries_enforced": boundaries_enforced,
 }
 
 

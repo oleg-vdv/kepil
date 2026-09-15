@@ -35,6 +35,11 @@ SERVER = {"name": "kepil", "version": __version__}
 
 # --- инструменты ------------------------------------------------------------
 
+def _boundary(b) -> str:
+    """Граница с пометкой, проверяет ли её шлюз или это заявление."""
+    return f"{b.text} (проверяется: {b.pattern})" if b.enforced else f"{b.text} (заявлено)"
+
+
 def _list_professions() -> str:
     lines = []
     for definition in load_all().values():
@@ -42,7 +47,7 @@ def _list_professions() -> str:
             f"{definition.id} — {definition.name}: {definition.summary or definition.purpose}\n"
             f"  шагов: {len(definition.steps)}; "
             f"требуют человека: {', '.join(definition.irreversible)}; "
-            f"никогда не делает: {'; '.join(definition.does_not)}")
+            f"никогда не делает: {'; '.join(_boundary(b) for b in definition.boundaries())}")
     return "\n".join(lines) or "профессии не найдены"
 
 

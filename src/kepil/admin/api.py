@@ -56,7 +56,9 @@ def health() -> dict[str, Any]:
 def list_professions() -> dict[str, Any]:
     return {"professions": [
         {"id": d.id, "name": d.name, "steps": len(d.steps),
-         "irreversible": d.irreversible, "does_not": d.does_not,
+         "irreversible": d.irreversible,
+         "does_not": [{"text": b.text, "pattern": b.pattern,
+                       "enforced": b.enforced} for b in d.boundaries()],
          "limits": d.limits}
         for d in professions.load_all().values()]}
 

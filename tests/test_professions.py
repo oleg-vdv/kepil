@@ -73,3 +73,61 @@ def test_rollback_says_when_action_is_irreversible():
     profession = Profession(load("tender").definition)
     assert profession.rollback("publish:complaint") is None
     assert "отзыв" in (profession.rollback("send:package") or "")
+
+
+# --- границы ----------------------------------------------------------------
+
+def test_boundary_without_a_pattern_is_only_a_declaration():
+    """Текст в «не делает» ничего не запрещает, пока нет шаблона действия."""
+    from kepil.professions.definition import Boundary
+    text, pattern = Boundary.parse("не обещает цену от имени компании")
+    assert text == "не обещает цену от имени компании" and pattern is None
+
+
+def test_boundary_with_a_pattern_is_enforced_only_if_the_mandate_forbids_it():
+    """Шаблон, не покрытый запретом, — это обещание проверки, которой нет."""
+    from kepil.professions import get
+    definition = get("leads")
+    definition.does_not = ["не шлёт счета | send:invoice",
+                           "не делает чего-то ещё | do:something"]
+    definition.forbidden_actions = ["send:invoice"]
+    by_text = {b.text: b for b in definition.boundaries()}
+    assert by_text["не шлёт счета"].enforced is True
+    assert by_text["не делает чего-то ещё"].enforced is False
+
+
+def test_builtin_professions_enforce_what_can_be_enforced():
+    from kepil.professions import load_all
+    for definition in load_all().values():
+        if not definition.builtin:
+            continue
+        enforced = [b for b in definition.boundaries() if b.enforced]
+        assert enforced, f"{definition.id}: ни одна граница не исполняется"
+
+
+def test_passport_shows_the_text_without_the_pattern():
+    """Паспорт читает человек: технический хвост строки туда попадать не должен."""
+    from kepil.professions import Profession, get
+    definition = get("leads")
+    passport = Profession(definition).passport({"name": "ТОО", "bin": "123456789012"})
+    assert passport.does_not
+    assert not any("|" in line for line in passport.does_not)
+
+
+def test_forbidden_pattern_of_a_boundary_actually_stops_the_gate(tmp_path, monkeypatch):
+    """Проверка не по описанию границы, а по поведению шлюза на живом заказе."""
+    monkeypatch.setenv("KEPIL_DATA", str(tmp_path))
+    from kepil import orders
+    from kepil.gateway import ActionGateway, ActionRequest, Decision
+    from kepil.journal import Journal
+    from kepil.registry import store
+
+    store.save_settings({"name": "ТОО", "bin": "123456789012", "operator": "о"})
+    definition = load("leads").definition
+    bound = next(b for b in definition.boundaries() if b.enforced)
+
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    gateway = ActionGateway(Journal(orders.journal_path()), lambda _: True)
+    decision, reason = gateway.check(order.as_mandate(),
+                                     ActionRequest(action=bound.pattern))
+    assert decision is Decision.DENY, f"{bound.pattern} обязан быть отказан: {reason}"

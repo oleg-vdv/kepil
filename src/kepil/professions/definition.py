@@ -57,6 +57,35 @@ class Step:
                            f"{self.cost_kzt:g}" if self.cost_kzt else ""]).rstrip(" |")
 
 
+
+@dataclass(frozen=True)
+class Boundary:
+    """Строка из «не делает»: заявленная граница и её исполняемый двойник.
+
+    Граница в паспорте — это текст для человека, и закон требует именно текста
+    (ст. 15, ст. 17). Но текст ничего не запрещает: шлюз проверяет типы
+    действий, а не смысл фразы. «Не отправляет счета» выразимо как `send:invoice`
+    и будет исполнено; «не обещает цену от имени компании» — нет, потому что это
+    про содержание, а в содержание Kepil намеренно не смотрит.
+
+    Поэтому граница может нести шаблон действия после вертикальной черты —
+    как шаги профессии. Есть шаблон и он покрыт запретом мандата — граница
+    исполняется. Нет — остаётся обещанием, и система обязана сказать об этом
+    прямо, а не позволять принимать декларацию за механизм.
+    """
+    text: str
+    pattern: str | None = None
+    enforced: bool = False
+
+    @staticmethod
+    def parse(line: str) -> tuple[str, str | None]:
+        text, _, pattern = line.partition("|")
+        return text.strip(), (pattern.strip() or None)
+
+    def to_line(self) -> str:
+        return f"{self.text} | {self.pattern}" if self.pattern else self.text
+
+
 @dataclass
 class ProfessionDefinition:
     id: str
@@ -92,6 +121,24 @@ class ProfessionDefinition:
         return payload
 
     # --- производные значения ---
+
+    def boundaries(self) -> list[Boundary]:
+        """Границы из «не делает» с пометкой, исполняется ли каждая.
+
+        Исполняется та, у которой указан шаблон действия и этот шаблон покрыт
+        запретами мандата: иначе запись обещала бы проверку, которой нет.
+        """
+        out: list[Boundary] = []
+        for line in self.does_not:
+            text, pattern = Boundary.parse(line)
+            covered = bool(pattern) and any(
+                _matches(pattern, f) or pattern == f for f in self.forbidden_actions)
+            out.append(Boundary(text=text, pattern=pattern, enforced=covered))
+        return out
+
+    def declared_only(self) -> list[Boundary]:
+        """Границы, которые остаются обещанием: их шлюз проверить не может."""
+        return [b for b in self.boundaries() if not b.enforced]
 
     def allowed_actions(self) -> list[str]:
         seen: list[str] = []

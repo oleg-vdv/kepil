@@ -59,7 +59,7 @@ class Profession:
         return AgentPassport(
             agent_id=f"kepil.{self.definition.id}.v{version.split('.')[0]}",
             purpose=self.definition.purpose,
-            does_not=list(self.definition.does_not),
+            does_not=[x.text for x in self.definition.boundaries()],
             created_by=dict(operator),
             operated_by={**operator, "role": "владелец системы"},
             version={"agent": version, "released_at": released},

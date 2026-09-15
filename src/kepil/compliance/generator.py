@@ -83,7 +83,7 @@ def _directive(name: str, definition: ProfessionDefinition) -> str:
         return ("| № | Шаг | Действие | Внешняя система |\n|---|---|---|---|\n" + rows
                 if rows else "Шаги не заданы.")
     if name == "boundaries":
-        return _bullets(definition.does_not)
+        return _bullets([x.text for x in definition.boundaries()])
     if name == "intake":
         return _bullets(definition.intake)
     if name == "irreversible":
