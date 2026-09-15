@@ -258,6 +258,21 @@ def agent_reissue(request: Request) -> Response:
     return Response(redirect="/agents")
 
 
+def survey_index(request: Request) -> Response:
+    """Прогон чек-листа обследования по текущей установке."""
+    checklists = compliance.load_checklists()
+    if not checklists:
+        return page("Обследование", "survey",
+                    '<h1>Обследование</h1><div class="empty">Чек-листов нет. '
+                    'Положите файл чек-листа в каталог данных.</div>')
+    selected = request.query.get("id") or next(iter(checklists))
+    if selected not in checklists:
+        selected = next(iter(checklists))
+    report = compliance.run_survey(checklists[selected])
+    return page("Обследование", "survey",
+                views.survey_page(report, checklists, selected))
+
+
 def journal_view(request: Request) -> Response:
     journal = Journal(orders.journal_path())
     records = list(journal)
@@ -431,6 +446,7 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("GET", "/compliance", compliance_index),
     ("GET", "/compliance/<id>", compliance_view),
     ("GET", "/compliance/<id>/download", compliance_download),
+    ("GET", "/survey", survey_index),
     ("GET", "/journal", journal_view),
     ("POST", "/journal/anchor", journal_anchor),
     ("POST", "/journal/verify", journal_view),

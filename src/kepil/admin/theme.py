@@ -106,4 +106,7 @@ dl.kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:0;font-si
 dl.kv dt{color:var(--ink-3)}
 dl.kv dd{margin:0;overflow-wrap:anywhere}
 .empty{color:var(--ink-3);font-size:13px;padding:10px 0}
+table.survey td{vertical-align:top;padding-top:9px;padding-bottom:9px}
+table.survey tr.grp td{padding-top:16px;color:var(--ink-2)}
+table.survey .w{color:var(--ink-3);font-size:11.5px;margin-top:3px;line-height:1.45}
 """

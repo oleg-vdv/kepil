@@ -22,6 +22,7 @@ NAV = [
     ("/agents", "Агенты", "agents"),
     ("/meter", "Счётчик", "meter"),
     ("/compliance", "Комплаенс", "compliance"),
+    ("/survey", "Обследование", "survey"),
     ("/journal", "Журнал", "journal"),
     ("/settings", "Настройки", "settings"),
 ]
@@ -313,6 +314,74 @@ def _rollback_text(definition: ProfessionDefinition, action: str) -> str:
     if action in definition.rollback:
         return definition.rollback[action] or "откат невозможен — действие необратимо"
     return "удалить созданный черновик"
+
+
+# --- обследование -----------------------------------------------------------
+
+SURVEY_CLS = {"закрыто": "ok", "разрыв": "deny",
+              "нужен человек": "wait", "резолвер не найден": "deny"}
+
+
+def survey_page(report, checklists: dict, selected: str) -> str:
+    """Отчёт обследования: что доказано установкой и что обязан закрыть человек.
+
+    Доля закрытого показывается честно — вместе со знаменателем. Обследование,
+    в котором машина «закрыла всё», означало бы, что чек-лист неполон.
+    """
+    chips = "".join(
+        f'<a class="pill {"on" if cid == selected else ""}" href="/survey?id={e(cid)}">'
+        f'{e(c.name)}</a>' for cid, c in checklists.items())
+
+    unverified = report.checklist.unverified_acts()
+    warning = ""
+    if unverified:
+        items = "".join(
+            f'<li>{e(a.name)}{" · " + e(a.norm) if a.norm else ""}'
+            + (f' · <a href="{e(a.url)}" target="_blank" rel="noopener">'
+               f'первоисточник</a>' if a.url else "") + '</li>'
+            for a in unverified)
+        warning = (f'<div class="msg err"><b>Не сверено по первоисточнику: '
+                   f'{len(unverified)}.</b> Пока акт не сверен, ссылаться на него '
+                   f'в заключении нельзя — реквизиты устаревают быстрее методик.'
+                   f'<ul>{items}</ul></div>')
+
+    rows = []
+    stage_now = None
+    for row in report.rows:
+        if row.stage_id != stage_now:
+            stage_now = row.stage_id
+            rows.append(f'<tr class="grp"><td colspan="4"><b>Этап {e(row.stage_id)}. '
+                        f'{e(row.stage_name)}</b></td></tr>')
+        evidence = "".join(f'<div class="w">{e(x)}</div>' for x in row.answer.evidence)
+        rows.append(
+            f'<tr><td class="mono">{e(row.check.id)}</td>'
+            f'<td>{e(row.check.title)}'
+            f'<div class="w">{e(", ".join(row.check.basis))}</div></td>'
+            f'<td><span class="pill {SURVEY_CLS.get(row.answer.state, "")}">'
+            f'{e(row.answer.state)}</span>'
+            f'<div class="w">{e(row.check.severity)}</div></td>'
+            f'<td>{e(row.answer.summary)}{evidence}</td></tr>')
+
+    return f"""
+<h1>Обследование</h1>
+<p class="lede">Чек-лист по нормам: что установка доказывает сама и что обязан
+  закрыть человек. Это не заключение о соответствии — вывод и подпись за
+  человеком.</p>
+{f'<div class="row">{chips}</div>' if chips else ''}
+{warning}
+<div class="grid g3">
+  <div class="card tile"><div class="n">{len(report.rows)}</div><div class="l">пунктов</div></div>
+  <div class="card tile"><div class="n" style="color:var(--ok)">{len(report.closed)}</div><div class="l">закрыто установкой</div></div>
+  <div class="card tile"><div class="n" style="color:var(--deny)">{len(report.gaps)}</div><div class="l">разрывов</div></div>
+  <div class="card tile"><div class="n" style="color:var(--wait)">{len(report.for_human)}</div><div class="l">за человеком</div></div>
+</div>
+<p class="lede">Без участия человека закрыто {report.machine_share():.0%} пунктов.
+  Трудоёмкость обследования по чек-листу: {report.checklist.effort_days():g} человеко-дней.</p>
+<table class="survey">
+  <tr><th class="mono">№</th><th>Пункт и основание</th><th>Состояние</th><th>Чем подтверждается</th></tr>
+  {''.join(rows)}
+</table>
+"""
 
 
 def journal_table(records: list[dict[str, Any]]) -> str:

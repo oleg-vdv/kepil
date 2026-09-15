@@ -8,8 +8,14 @@
 под конкретное законодательство кладутся в каталог данных (см. packs.py).
 """
 
+from .checklist import Act, Check, Checklist, Stage, checklists_dir
+from .checklist import get as get_checklist
+from .checklist import load_all as load_checklists
 from .generator import Document, available_packs, build, missing_marks
 from .packs import Pack, installed_dir
+from .survey import Answer, Report, Row, run as run_survey
 
 __all__ = ["Document", "Pack", "build", "missing_marks", "available_packs",
-           "installed_dir"]
+           "installed_dir", "Checklist", "Stage", "Check", "Act",
+           "load_checklists", "get_checklist", "checklists_dir",
+           "run_survey", "Report", "Row", "Answer"]
