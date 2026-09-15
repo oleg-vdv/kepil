@@ -139,6 +139,36 @@ generator, the journal with chain verification and anchoring, and settings.
 State is plain JSON files under `KEPIL_DATA` (default `./data`). No database:
 you can open them, read them, and attach them to a dispute.
 
+### The confirmation round trip is what witnesses the log
+
+A hash chain proves the surviving records agree with each other. It says nothing
+about what was removed: cut the journal at record 3, rewrite everything after it
+with correct `prev_hash` values, and verification prints Integrity confirmed over
+a shorter history that is perfectly consistent with itself.
+
+The fix was already in the design without being used. The confirmation card
+leaves the writer process and goes to a person, in the panel or in Telegram, and
+that round trip is the one artifact produced outside the writer. So the card now
+carries the current chain head, the decision that comes back quotes the head it
+saw, and the journal records it.
+
+A rewritten prefix now has to contradict a message sitting somewhere the writer
+cannot reach. Verification stops being a self-consistency check and becomes a
+second party's statement about what the log looked like at a given moment.
+
+```
+chain against itself:  Integrity confirmed
+witnessed head:        confirmation at record 0 refers to root sha256:a3d124b9…,
+                       which is no longer in the chain: the history was cut or
+                       rewritten (3 such confirmations)
+```
+
+Records written after the last witnessed head stay unprotected. That is where
+the guarantee stops, and it says so.
+
+This came from a reader, [ANP2 Network](https://dev.to/olegvdv/i-tried-to-forge-my-own-ai-agents-audit-log-3chh),
+who described both the attack and the fix in one comment.
+
 ## Survey: what the installation proves, and what a person must answer
 
 A compliance survey is a list of questions bound to legal norms. Some of the

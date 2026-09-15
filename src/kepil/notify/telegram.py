@@ -25,6 +25,11 @@ API = "https://api.telegram.org/bot{token}/{method}"
 TIMEOUT = 30
 
 
+def _short(head: str) -> str:
+    """Короткая привязка корня для кнопки: в callback_data всего 64 байта."""
+    return head.replace("sha256:", "")[:16]
+
+
 class TelegramError(RuntimeError):
     """Ответ Telegram с ошибкой или недоступный API."""
 
@@ -69,11 +74,21 @@ class Telegram:
         return me.get("username", "бот")
 
     def ask_confirmation(self, order: Any, pending: dict[str, Any],
-                         rollback: str | None) -> dict[str, Any]:
-        """Отправляет карточку действия с кнопками «Подтвердить» и «Вернуть»."""
+                         rollback: str | None, head: str = "") -> dict[str, Any]:
+        """Карточка действия с кнопками «Подтвердить» и «Вернуть».
+
+        На карточке стоит текущий корень цепочки. Это единственный артефакт,
+        покидающий процесс-писатель: копия сообщения остаётся в переписке
+        оператора, куда переписывающий журнал не дотянется. Вернувшееся решение
+        цитирует корень, который видело, и он попадает в журнал.
+
+        Смысл в том, что цепочка сама по себе доказывает лишь согласие уцелевших
+        записей друг с другом: обрезанную и заново пересчитанную историю она
+        примет. Корень, названный снаружи, обрезку не переживает молча.
+        """
         client = order.client.get("name", "клиент")
         undo = rollback or "откат невозможен — действие необратимо"
-        text = "\n".join([
+        lines = [
             f"Требуется подтверждение · заказ {order.id}",
             "",
             f"Клиент: {client}",
@@ -81,13 +96,17 @@ class Telegram:
             f"Действие: {pending['action']}",
             f"Получатель: {pending.get('system') or '—'}",
             f"Если отменить: {undo}",
-        ])
+        ]
+        if head:
+            lines += ["", f"Журнал на этот момент: {head}",
+                      "Сохраните это сообщение: по нему видно, что историю не "
+                      "переписали задним числом."]
         keyboard = {"inline_keyboard": [[
-            {"text": "Подтвердить", "callback_data": f"ok:{order.id}"},
-            {"text": "Вернуть", "callback_data": f"no:{order.id}"},
+            {"text": "Подтвердить", "callback_data": f"ok:{order.id}:{_short(head)}"},
+            {"text": "Вернуть", "callback_data": f"no:{order.id}:{_short(head)}"},
         ]]}
-        return self.call("sendMessage", chat_id=self.chat_id, text=text,
-                         reply_markup=keyboard)
+        return self.call("sendMessage", chat_id=self.chat_id,
+                         text="\n".join(lines), reply_markup=keyboard)
 
     def notify(self, text: str) -> dict[str, Any]:
         return self.call("sendMessage", chat_id=self.chat_id, text=text)
@@ -121,8 +140,10 @@ def parse_press(update: dict[str, Any], chat_id: str) -> tuple[str, str, str] | 
     data = query.get("data", "")
     if ":" not in data:
         return None
-    decision, order_id = data.split(":", 1)
-    if decision not in ("ok", "no"):
+    parts = data.split(":")
+    decision = parts[0]
+    order_id = parts[1] if len(parts) > 1 else ""
+    if decision not in ("ok", "no") or not order_id:
         return None
     return order_id, decision, query.get("id", "")
 

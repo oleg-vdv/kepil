@@ -359,3 +359,74 @@ def test_preview_promises_everything_when_all_steps_are_reversible():
     summary = orders.rollback_since(order, minutes=60)
     assert summary["blocked"] is None
     assert f"будет отменено {len(summary['undone'])}" in preview.lower()
+
+
+# --- засвидетельствованные корни --------------------------------------------
+
+def test_truncated_journal_passes_the_chain_but_fails_the_witness():
+    """Обрезка с пересчётом — та подделка, против которой цепочка бессильна.
+
+    Уцелевшие записи согласуются между собой, и verify_chain скажет «цело».
+    Но подтверждения ссылались на корни, которых в укороченной истории нет.
+    """
+    from kepil.journal import Journal, verify_chain, verify_witnesses
+    from kepil.journal.chain import GENESIS, JournalEntry
+
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    while True:
+        current = orders.get(order.id)
+        if current.pending:
+            orders.confirm(current, True)
+            continue
+        if orders.run_next(orders.get(order.id)) is None:
+            break
+
+    path = orders.journal_path()
+    original = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert any((r.get("human") or {}).get("head_seen") for r in original)
+
+    # вырезаем ранние записи и пересобираем цепочку заново, как сделал бы тот,
+    # у кого есть доступ к файлу
+    kept = original[4:]
+    path.write_text("", encoding="utf-8")
+    rebuilt = Journal(path)
+    for record in kept:
+        entry = JournalEntry(
+            agent_id=record["agent_id"], action=record["action"],
+            decision=record["decision"], order_id=record.get("order_id"),
+            mandate_id=record.get("mandate_id"), step=record.get("step"),
+            human=record.get("human"), cost_kzt=record.get("cost_kzt", 0.0),
+            ts=record["ts"])
+        rebuilt.append(entry)
+
+    fresh = Journal(path)
+    chain_ok, _ = verify_chain(fresh)
+    assert chain_ok, "переписанная цепочка обязана сходиться сама с собой"
+
+    witness_ok, problem = verify_witnesses(fresh)
+    assert not witness_ok, "обрезку должен поймать засвидетельствованный корень"
+    assert "обрезана" in problem or "переписана" in problem
+
+
+def test_witness_check_passes_on_an_untouched_journal():
+    from kepil.journal import Journal, verify_witnesses
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    while True:
+        current = orders.get(order.id)
+        if current.pending:
+            orders.confirm(current, True)
+            continue
+        if orders.run_next(orders.get(order.id)) is None:
+            break
+    ok, problem = verify_witnesses(Journal(orders.journal_path()))
+    assert ok, problem
+
+
+def test_panel_confirmation_also_records_a_witness():
+    """Свидетелем работает и панель: корень фиксируется независимо от канала."""
+    from kepil.journal import Journal, witnessed_heads
+    order = order_until_stop()
+    assert order.pending["head_seen"]
+    orders.confirm(order, True)
+    seen = witnessed_heads(Journal(orders.journal_path()))
+    assert seen and seen[-1]["ref"] == "панель"

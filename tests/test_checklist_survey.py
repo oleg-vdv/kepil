@@ -125,19 +125,42 @@ def test_risk_review_resolver_sees_an_overdue_card(monkeypatch):
 
 
 def test_journal_resolver_says_the_root_is_not_witnessed():
-    """Цепочка сходится, но без зафиксированного корня это не доказательство."""
-    worked_order()
+    """Журнал без подтверждений и якорей ничем не подпёрт снаружи.
+
+    Заказ, дошедший только до первой остановки, ещё не создал свидетеля:
+    карточка ушла, но решение не вернулось.
+    """
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    while orders.run_next(orders.get(order.id)) is not None:
+        if orders.get(order.id).pending:
+            break
     answer = survey.journal_intact(cl.Check(id="8.2", title=""))
     assert answer.state == cl.NEEDS_HUMAN
-    assert "корень ни разу не зафиксирован" in answer.summary
+    assert "нигде не назван снаружи" in answer.summary
 
 
 def test_journal_resolver_notes_anchors_without_signature():
+    """Неподписанный якорь рядом с журналом называется в доказательствах."""
     worked_order()
     anchor(Journal(orders.journal_path()))
     answer = survey.journal_intact(cl.Check(id="8.2", title=""))
+    assert any("без подписи" in line for line in answer.evidence)
+
+
+def test_journal_resolver_closes_when_a_head_was_named_to_a_person():
+    """Названный человеку корень — свидетель за пределами процесса-писателя."""
+    worked_order()
+    answer = survey.journal_intact(cl.Check(id="8.2", title=""))
+    assert answer.state == cl.CLOSED
+    assert any("названных человеку" in line for line in answer.evidence)
+
+
+def test_journal_resolver_admits_when_no_head_was_ever_witnessed(monkeypatch):
+    worked_order()
+    monkeypatch.setattr(survey, "witnessed_heads", lambda _: [])
+    answer = survey.journal_intact(cl.Check(id="8.2", title=""))
     assert answer.state == cl.NEEDS_HUMAN
-    assert "без" in answer.summary and "подпис" in answer.summary
+    assert "обрезку" in answer.summary
 
 
 def test_journal_resolver_reports_a_broken_chain():

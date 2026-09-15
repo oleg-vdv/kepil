@@ -55,7 +55,8 @@ def test_confirmation_card_holds_what_the_operator_needs():
     assert "отправить уточняющее" in payload["text"], "оператор должен видеть цену отмены"
 
     buttons = payload["reply_markup"]["inline_keyboard"][0]
-    assert [b["callback_data"] for b in buttons] == [f"ok:{order.id}", f"no:{order.id}"]
+    assert [b["callback_data"].split(":")[:2] for b in buttons] == [
+        ["ok", order.id], ["no", order.id]]
 
 
 def test_irreversible_action_says_so_in_the_card():
@@ -135,3 +136,40 @@ def test_channel_turns_on_from_settings():
                          "telegram_chat_id": "42"})
     assert notify.configured() is True
     assert notify.bot().chat_id == "42"
+
+
+# --- корень цепочки на карточке ---------------------------------------------
+
+def test_card_carries_the_chain_head_outside_the_writer():
+    """Корень на карточке — единственный след журнала за пределами процесса."""
+    transport = FakeTelegram()
+    order = waiting_order()
+    head = "sha256:" + "ab12cd34" * 8
+    Telegram("t", "42", transport).ask_confirmation(
+        order, order.pending, "отозвать", head)
+
+    payload = transport.payload("sendMessage")
+    assert head in payload["text"], "оператор должен видеть корень целиком"
+    buttons = payload["reply_markup"]["inline_keyboard"][0]
+    for button in buttons:
+        assert button["callback_data"].endswith("ab12cd34ab12cd34"), (
+            "решение обязано цитировать корень, который видело")
+        assert len(button["callback_data"].encode()) <= 64, "лимит callback_data"
+
+
+def test_press_still_parses_when_the_head_is_attached():
+    order_id, decision, _ = parse_press(
+        {"callback_query": {"id": "1", "data": "ok:ord-0007:ab12cd34ab12cd34",
+                            "message": {"chat": {"id": 42}}}}, "42")
+    assert (order_id, decision) == ("ord-0007", "ok")
+
+
+def test_confirmation_records_the_head_the_operator_saw(tmp_path, monkeypatch):
+    from kepil.journal import Journal, witnessed_heads
+    order = waiting_order()
+    head_on_card = order.pending["head_seen"]
+    assert head_on_card, "корень должен фиксироваться при постановке в очередь"
+
+    orders.confirm(order, True)
+    seen = witnessed_heads(Journal(orders.journal_path()))
+    assert seen and seen[-1]["head_seen"] == head_on_card

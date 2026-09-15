@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .chain import Journal, verify_chain
+from .chain import GENESIS, Journal, verify_chain
 
 TZ = timezone(timedelta(hours=5))
 
@@ -52,6 +52,54 @@ def anchors(journal: Journal) -> list[dict[str, Any]]:
             path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def witnessed_heads(journal: "Journal") -> list[dict[str, Any]]:
+    """Корни цепочки, которые видел человек при подтверждении.
+
+    Карточка подтверждения уходит из процесса наружу — в панель или в Telegram —
+    и несёт на себе текущий корень. Вернувшееся решение цитирует тот корень,
+    который оно видело, и он попадает в журнал полем `head_seen`.
+    """
+    out = []
+    for record in journal:
+        human = record.get("human") or {}
+        if human.get("head_seen"):
+            out.append({"seq": record.get("seq"), "head_seen": human["head_seen"],
+                        "at": human.get("at"), "ref": human.get("channel_ref")})
+    return out
+
+
+def verify_witnesses(journal: "Journal") -> tuple[bool, str | None]:
+    """Проверяет, что засвидетельствованные корни всё ещё есть в цепочке.
+
+    Это ловит вторую форму подделки, против которой цепочка сама по себе
+    бессильна: журнал обрезают и переписывают заново с верными prev_hash.
+    Оставшиеся записи согласуются между собой, и обычная проверка скажет, что
+    всё в порядке. Но подтверждения ссылаются на корни, которых в укороченной
+    истории больше нет, — и это видно.
+
+    Чего проверка не даёт: тот, кто перепишет и сами ссылки, снова получит
+    согласованный файл. Настоящим свидетелем остаётся копия карточки там, куда
+    писатель не дотянется, — в переписке оператора. Здесь сверяется только то,
+    что доступно изнутри файла.
+    """
+    seen_hashes = {GENESIS}
+    pending: list[dict[str, Any]] = []
+    for record in journal:
+        human = record.get("human") or {}
+        head = human.get("head_seen")
+        if head and head not in seen_hashes:
+            pending.append({"seq": record.get("seq"), "head": head})
+        if record.get("hash"):
+            seen_hashes.add(record["hash"])
+    if pending:
+        first = pending[0]
+        return False, (
+            f"подтверждение в записи {first['seq']} ссылается на корень "
+            f"{first['head'][:23]}…, которого в цепочке нет: история была "
+            f"обрезана или переписана (таких подтверждений: {len(pending)})")
+    return True, None
+
+
 def verify(journal: Journal) -> tuple[bool, str | None]:
     """Проверяет цепочку и все зафиксированные корни.
 
@@ -71,4 +119,5 @@ def verify(journal: Journal) -> tuple[bool, str | None]:
         if actual != item["head"]:
             return False, (f"якорь от {item['ts']}: запись {item['seq']} "
                            f"изменилась после фиксации")
-    return True, None
+
+    return verify_witnesses(journal)

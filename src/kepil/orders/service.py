@@ -195,6 +195,11 @@ def run_next(order: Order) -> tuple[Decision, str] | None:
     order.store_mandate(mandate)
 
     if decision is Decision.AWAIT_HUMAN:
+        # Корень цепочки на момент, когда карточка уходит человеку. Он попадёт
+        # на карточку и вернётся вместе с решением: подтверждение — это
+        # единственный артефакт, покидающий процесс-писатель, и потому
+        # единственное, чем можно подпереть журнал снаружи.
+        row["head_seen"] = Journal(journal_path()).head()
         order.pending = row
         order.status = "awaiting"
         _call_human(order)
@@ -237,6 +242,8 @@ def confirm(order: Order, approved: bool, note: str = "") -> None:
         decision=row["decision"],
         human={"required": True, "approved": approved,
                "confirmed_by": "operator", "note": note,
+               "head_seen": row.get("head_seen", ""),
+               "channel_ref": row.get("channel_ref", "панель"),
                "at": datetime.now().isoformat(timespec="seconds")},
     ))
     order.pending = None

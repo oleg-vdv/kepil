@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Callable
 
-from ..journal import Journal, anchors, verify_with_anchors
+from ..journal import (Journal, anchors, verify_with_anchors,
+                       witnessed_heads)
 from ..orders import service as orders
 from ..professions import definition as professions
 from ..registry import store as agents
@@ -185,27 +186,46 @@ def suspension_possible(_: Check) -> Answer:
 
 
 def journal_intact(_: Check) -> Answer:
-    """Целостность журнала действий и зафиксированные корни."""
+    """Целостность журнала и то, чем она подпёрта снаружи.
+
+    Цепочка хешей доказывает, что уцелевшие записи согласуются друг с другом.
+    Она не доказывает, что ничего не убрали: журнал можно обрезать и пересчитать
+    заново, и проверка цепочки этого не заметит.
+
+    Подпорок снаружи две, и они независимы. Зафиксированный корень — если он
+    подписан и хранится не рядом с журналом. И корень, названный человеку на
+    карточке подтверждения: карточка уходит из процесса-писателя, её копия
+    остаётся в переписке, и обрезанная история на такой корень уже не сошлётся.
+    """
     journal = Journal(orders.journal_path())
     ok, problem = verify_with_anchors(journal)
     fixed = anchors(journal)
+    seen = witnessed_heads(journal)
+    unsigned = [a for a in fixed if not a.get("signature")]
+
     evidence = [f"записей: {sum(1 for _ in journal)}",
-                f"зафиксированных корней: {len(fixed)}"]
+                f"зафиксированных корней: {len(fixed)}",
+                f"корней, названных человеку при подтверждении: {len(seen)}"]
+    if unsigned:
+        evidence.append(f"якорей без подписи, рядом с журналом: {len(unsigned)}")
+
     if not ok:
         return Answer.gap(f"целостность нарушена: {problem}", *evidence)
-    if not fixed:
-        return Answer(NEEDS_HUMAN,
-                      "цепочка сходится, но корень ни разу не зафиксирован: "
-                      "переписать журнал целиком и пересчитать хеши возможно",
-                      evidence)
-    unsigned = [a for a in fixed if not a.get("signature")]
-    if unsigned:
-        return Answer(NEEDS_HUMAN,
-                      f"корни фиксируются, но {len(unsigned)} из {len(fixed)} без "
-                      "подписи и хранятся рядом с журналом — внешнего свидетеля нет",
-                      evidence)
-    return Answer.closed("цепочка сходится, корни зафиксированы и подписаны", *evidence)
 
+    signed = [a for a in fixed if a.get("signature")]
+    if seen or signed:
+        return Answer.closed(
+            "цепочка сходится, и есть корень, названный за пределами журнала: "
+            "обрезанная и пересобранная история на него не сошлётся", *evidence)
+
+    if fixed:
+        return Answer(NEEDS_HUMAN,
+                      f"корни фиксируются, но все {len(fixed)} без подписи и лежат "
+                      "рядом с журналом — переписать можно и то и другое",
+                      evidence)
+    return Answer(NEEDS_HUMAN,
+                  "цепочка сходится, но корень нигде не назван снаружи: обрезку "
+                  "истории подтвердить нечем", evidence)
 
 def boundaries_enforced(_: Check) -> Answer:
     """Границы из паспорта: какие проверяет шлюз, а какие остаются обещанием.

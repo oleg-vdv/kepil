@@ -42,7 +42,13 @@ def on_pending(order: Any) -> None:
         return
     from ..professions import Profession
     rollback = Profession(order.definition()).rollback(order.pending["action"])
+    head = order.pending.get("head_seen", "")
     try:
-        client.ask_confirmation(order, order.pending, rollback)
+        sent = client.ask_confirmation(order, order.pending, rollback, head)
     except TelegramError:
-        pass
+        return
+    # ссылка на сообщение: по ней потом находят карточку с корнем в переписке
+    message_id = (sent or {}).get("message_id")
+    if message_id:
+        order.pending["channel_ref"] = f"telegram:{client.chat_id}:{message_id}"
+        order.save()
