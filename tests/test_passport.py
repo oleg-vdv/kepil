@@ -45,3 +45,26 @@ def test_fingerprint_changes_with_content():
     before = TENDER.fingerprint()
     copy = AgentPassport(**{**TENDER.__dict__, "purpose": TENDER.purpose + "."})
     assert copy.fingerprint() != before
+
+
+# --- версия -----------------------------------------------------------------
+
+def test_version_is_not_duplicated_anywhere():
+    """Номер версии живёт в pyproject, а копии расходятся с ним молча.
+
+    Рукопожатие MCP сообщает версию наружу: устаревшая копия — это неправда,
+    сказанная чужой программе.
+    """
+    import pathlib
+    import kepil
+    from kepil.mcp import server
+
+    root = pathlib.Path(kepil.__file__).resolve().parents[2]
+    declared = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in (root / "pyproject.toml").read_text(encoding="utf-8").splitlines()
+        if line.startswith("version"))
+    assert kepil.__version__ == declared, (
+        f"pyproject {declared}, пакет {kepil.__version__} — "
+        "переустановите: pip install -e .")
+    assert server.SERVER["version"] == declared

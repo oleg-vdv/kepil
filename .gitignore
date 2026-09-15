@@ -3,12 +3,16 @@ __pycache__/
 .venv/
 venv/
 .env
-*.jsonl
-journal/
 .pytest_cache/
 .ruff_cache/
 dist/
 build/
 *.egg-info/
-.demo-data/
-data/
+.claude/
+
+# Каталоги данных. Ведущая косая черта обязательна: без неё «journal/» и
+# «data/» совпадают на любой глубине и вырезают из репозитория
+# src/kepil/journal — ядро продукта.
+/data/
+/.demo-data/
+*.jsonl

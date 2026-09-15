@@ -236,8 +236,23 @@ def profession_duplicate(request: Request) -> Response:
 
 
 def profession_delete(request: Request) -> Response:
+    """Удаление профессии, на которую никто не ссылается.
+
+    Заказ хранит идентификатор профессии, а журнал — действия по её шагам.
+    Удалить описание, пока такие заказы есть, значит потерять ответ на вопрос,
+    что агенту было разрешено, — то есть ровно то, ради чего журнал и ведётся.
+    """
+    profession_id = request.query["id"]
+    used = [o.id for o in orders.list_orders() if o.profession == profession_id]
+    if used:
+        names = ", ".join(used[:5]) + (f" и ещё {len(used) - 5}" if len(used) > 5 else "")
+        return page("Профессии", "professions",
+                    views.professions_page(professions.load_all()),
+                    ("err", f"нельзя удалить: на профессию ссылаются заказы "
+                            f"({len(used)}) — {names}. Журнал по ним перестанет "
+                            f"объясняться."))
     try:
-        professions.delete(request.query["id"])
+        professions.delete(profession_id)
     except KeyError as exc:
         return page("Профессии", "professions",
                     views.professions_page(professions.load_all()), ("err", str(exc)))

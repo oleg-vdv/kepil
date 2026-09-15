@@ -24,13 +24,13 @@ import json
 import sys
 from typing import Any, Callable
 
-from .. import orders
+from .. import __version__, orders
 from ..gateway import Decision
 from ..professions import load_all
 from ..registry import store as agents
 
 PROTOCOL = "2025-06-18"
-SERVER = {"name": "kepil", "version": "0.2.0"}
+SERVER = {"name": "kepil", "version": __version__}
 
 
 # --- инструменты ------------------------------------------------------------

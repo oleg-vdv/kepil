@@ -137,6 +137,35 @@ generator, the journal with chain verification and anchoring, and settings.
 State is plain JSON files under `KEPIL_DATA` (default `./data`). No database:
 you can open them, read them, and attach them to a dispute.
 
+## Survey: what the installation proves, and what a person must answer
+
+A compliance survey is a list of questions bound to legal norms. Some of the
+answers are already in the installation — risk and autonomy class in the
+passport, documentation completeness in the pack, confirmations and stops in the
+journal. The rest a person has to answer: the provenance of training data, the
+feature list of a model, insurance contracts.
+
+The panel runs a checklist and splits every item into three: closed by evidence
+from the installation, a gap, or *needs a human*. On a real installation about a
+fifth closes automatically. If it closed much more than that, the checklist
+would be incomplete.
+
+Two properties are worth stating. A resolver returns a fact — "no high autonomy
+declared", "zero stops in the journal" — never a verdict of compliance; the
+conclusion and the signature stay with a person. And a checklist file references
+the *name* of a resolver declared in code and contains nothing executable,
+because otherwise a JSON file from elsewhere would be a way to run code on the
+machine that keeps the journal.
+
+The integrity resolver reports the system's own weakness: if the chain root has
+never been fixed, or is fixed unsigned next to the journal, there is no outside
+witness and the whole history could be rewritten.
+
+```
+8.2  needs a human   anchors exist, but 1 of 1 is unsigned and stored next to
+                     the journal — there is no outside witness
+```
+
 ## Compliance packs
 
 Documentation requirements differ by country and change faster than code, so the

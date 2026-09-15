@@ -3,6 +3,7 @@
 import pytest
 
 from kepil import orders
+from kepil.admin import app
 from kepil.admin.app import Request, resolve
 from kepil.gateway import Decision
 from kepil.professions import load
@@ -151,3 +152,54 @@ def test_old_orders_keep_their_agent():
     old = make_order()
     store.reissue(old.agent_id)
     assert orders.get(old.id).agent_id == "kepil.leads.v1"
+
+
+# --- устойчивость -----------------------------------------------------------
+
+def test_damaged_journal_line_is_reported_not_swallowed():
+    """Битая строка — это поломка целостности, а не отсутствие данных.
+
+    Пропустить её молча нельзя: за ней может прятаться удалённая запись.
+    """
+    from kepil.journal import Journal, verify_chain
+    run_until_stop(make_order().id)
+    path = orders.journal_path()
+    path.write_text(path.read_text(encoding="utf-8") + "это не json\n", encoding="utf-8")
+
+    journal = Journal(path)                    # объект обязан создаться
+    assert journal.damaged() == [len(path.read_text(encoding="utf-8").splitlines())]
+    ok, problem = verify_chain(journal)
+    assert not ok and "повреждён" in problem
+    assert journal.records(), "читаемые записи должны остаться доступными"
+
+
+def test_damaged_journal_does_not_break_the_panel():
+    run_until_stop(make_order().id)
+    path = orders.journal_path()
+    path.write_text(path.read_text(encoding="utf-8") + "{обрыв\n", encoding="utf-8")
+    response = app.journal_view(Request("/journal", {}, {}))
+    assert response.status == 200
+    ok, problem = orders.verify_journal()
+    assert not ok and problem
+
+
+def test_profession_in_use_cannot_be_deleted():
+    """Удалённое описание профессии делает журнал по её заказам необъяснимым."""
+    from kepil.professions import duplicate, save
+    copy = duplicate("leads", "leads_copy", "Заявки (копия)")
+    save(copy)
+    orders.create("leads_copy", {"name": "ТОО «Пример»", "bin": "987654321098"})
+
+    response = app.profession_delete(Request("/x", {}, {"id": "leads_copy"}))
+    assert "нельзя удалить" in response.body
+    from kepil.professions import get as get_definition
+    assert get_definition("leads_copy"), "профессия должна остаться на месте"
+
+
+def test_unused_profession_can_be_deleted():
+    from kepil.professions import duplicate, save, get as get_definition
+    copy = duplicate("leads", "leads_spare", "Заявки (запас)")
+    save(copy)
+    app.profession_delete(Request("/x", {}, {"id": "leads_spare"}))
+    with pytest.raises(KeyError):
+        get_definition("leads_spare")
