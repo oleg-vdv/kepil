@@ -49,6 +49,17 @@ def on_pending(order: Any) -> None:
         return
     # ссылка на сообщение: по ней потом находят карточку с корнем в переписке
     message_id = (sent or {}).get("message_id")
+    ref = f"telegram:{client.chat_id}:{message_id}" if message_id else "telegram:?"
     if message_id:
-        order.pending["channel_ref"] = f"telegram:{client.chat_id}:{message_id}"
+        order.pending["channel_ref"] = ref
         order.save()
+    if head:
+        # Локальная копия перечня отправленных карточек. Это удобство, а не
+        # доказательство: файл рядом с журналом, и переписавший один перепишет
+        # и другой. Настоящий перечень живёт в канале.
+        from ..journal import Journal, record_sent
+        from ..orders.service import journal_path
+        try:
+            record_sent(Journal(journal_path()), head, ref)
+        except OSError:
+            pass

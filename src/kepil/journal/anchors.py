@@ -100,6 +100,69 @@ def verify_witnesses(journal: "Journal") -> tuple[bool, str | None]:
     return True, None
 
 
+def verify_against_sent(journal: "Journal",
+                        sent: list[dict[str, Any]]) -> tuple[bool, str | None]:
+    """Проверяет журнал по перечню карточек, составленному снаружи.
+
+    Направление здесь принципиально. `verify_witnesses` идёт от журнала наружу и
+    потому проверяет только те подтверждения, в которых файл сам признаётся:
+    достаточно обрезать историю по последнее подтверждение, и проверять станет
+    нечего — цепочка сойдётся, свидетелей ноль, обе проверки зелёные.
+
+    Удаление видно только в обратную сторону. Если перечень отправленных
+    карточек составлен вне файла и перечислен целиком, каждая карточка обязана
+    найти свой корень в журнале. Пропавшая запись не отменяет карточки.
+
+    Поэтому перечень — аргумент, а не то, что модуль добывает сам. Откуда он
+    взят и можно ли ему верить, код решить не может: это и есть то место, где
+    доказательство упирается во вторую сторону.
+    """
+    if not sent:
+        return False, ("перечень отправленных карточек пуст: проверять журнал "
+                       "нечем, кроме него самого")
+    hashes = {GENESIS} | {r["hash"] for r in journal if r.get("hash")}
+    missing = [card for card in sent if card.get("head") and card["head"] not in hashes]
+    if missing:
+        first = missing[0]
+        return False, (
+            f"карточка от {first.get('at', '?')} ({first.get('ref', 'без ссылки')}) "
+            f"называет корень {first['head'][:23]}…, которого в журнале нет: "
+            f"записи удалены (таких карточек: {len(missing)})")
+    return True, None
+
+
+def sent_cards_path(journal: "Journal") -> Path:
+    return journal.path.with_name(journal.path.stem + "-sent.jsonl")
+
+
+def record_sent(journal: "Journal", head: str, ref: str) -> dict[str, Any]:
+    """Локальная копия перечня отправленных карточек.
+
+    Удобство, а не доказательство: файл лежит рядом с журналом, и тот, кто
+    переписал один, перепишет и другой. Настоящий перечень живёт в канале, куда
+    уходили карточки, и подставляется в verify_against_sent снаружи.
+    """
+    record = {"at": datetime.now(TZ).isoformat(timespec="seconds"),
+              "head": head, "ref": ref}
+    with sent_cards_path(journal).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record
+
+
+def sent_cards(journal: "Journal") -> list[dict[str, Any]]:
+    path = sent_cards_path(journal)
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
 def verify(journal: Journal) -> tuple[bool, str | None]:
     """Проверяет цепочку и все зафиксированные корни.
 

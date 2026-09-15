@@ -75,7 +75,7 @@ def press(order_id, decision="ok", chat="42"):
 
 
 def test_press_from_the_owner_is_accepted():
-    assert parse_press(press("ord-0001"), "42") == ("ord-0001", "ok", "cb1")
+    assert parse_press(press("ord-0001"), "42") == ("ord-0001", "ok", "cb1", "")
 
 
 def test_press_from_a_stranger_is_ignored():
@@ -158,7 +158,7 @@ def test_card_carries_the_chain_head_outside_the_writer():
 
 
 def test_press_still_parses_when_the_head_is_attached():
-    order_id, decision, _ = parse_press(
+    order_id, decision, _cb, _head = parse_press(
         {"callback_query": {"id": "1", "data": "ok:ord-0007:ab12cd34ab12cd34",
                             "message": {"chat": {"id": 42}}}}, "42")
     assert (order_id, decision) == ("ord-0007", "ok")
@@ -173,3 +173,22 @@ def test_confirmation_records_the_head_the_operator_saw(tmp_path, monkeypatch):
     orders.confirm(order, True)
     seen = witnessed_heads(Journal(orders.journal_path()))
     assert seen and seen[-1]["head_seen"] == head_on_card
+
+
+def test_full_head_returns_with_the_press_not_just_the_prefix():
+    """64 бита в кнопке связывают слабо; полный корень приходит в теле карточки."""
+    head = "sha256:" + "ab12cd34" * 8
+    result = parse_press({"callback_query": {
+        "id": "1", "data": "ok:ord-0001:ab12cd34ab12cd34",
+        "message": {"chat": {"id": 42},
+                    "text": "Требуется подтверждение\n\nЖурнал на этот момент: " + head},
+    }}, "42")
+    assert result is not None
+    assert result[3] == head, "полный корень обязан вернуться вместе с решением"
+
+
+def test_press_is_refused_when_the_returned_head_does_not_match():
+    order = waiting_order()
+    answer = apply_press(order.id, "ok", "sha256:" + "00" * 32)
+    assert "Отклонено" in answer
+    assert orders.get(order.id).pending, "решение не должно применяться"

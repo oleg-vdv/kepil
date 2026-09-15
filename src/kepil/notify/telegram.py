@@ -16,6 +16,7 @@ Telegram выбран потому, что бот заводится за пят
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -124,8 +125,26 @@ class Telegram:
         self.call("answerCallbackQuery", callback_query_id=callback_id, text=text)
 
 
-def parse_press(update: dict[str, Any], chat_id: str) -> tuple[str, str, str] | None:
-    """Разбирает нажатие: возвращает (id заказа, решение, id колбэка).
+HEAD_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def head_from_card(query: dict[str, Any]) -> str:
+    """Полный корень из текста карточки, вернувшегося вместе с нажатием.
+
+    В callback_data помещается лишь 16 шестнадцатеричных знаков — 64 бита, и
+    сами по себе они связывают слабо: их выбирает тот же писатель, что
+    определяет содержимое записей, и может подбирать. Но обновление о нажатии
+    несёт и само сообщение, поэтому полный корень возвращается вместе с
+    решением, и сверять можно его, а не приставку.
+    """
+    text = (query.get("message") or {}).get("text") or ""
+    found = HEAD_RE.search(text)
+    return found.group(0) if found else ""
+
+
+def parse_press(update: dict[str, Any],
+                chat_id: str) -> tuple[str, str, str, str] | None:
+    """Разбирает нажатие: (id заказа, решение, id колбэка, корень с карточки).
 
     Нажатия из любого чужого чата игнорируются: бот отвечает только тому, чей
     идентификатор указан в настройках. Иначе кнопку сможет нажать кто угодно,
@@ -145,16 +164,24 @@ def parse_press(update: dict[str, Any], chat_id: str) -> tuple[str, str, str] | 
     order_id = parts[1] if len(parts) > 1 else ""
     if decision not in ("ok", "no") or not order_id:
         return None
-    return order_id, decision, query.get("id", "")
+    return order_id, decision, query.get("id", ""), head_from_card(query)
 
 
-def apply_press(order_id: str, decision: str) -> str:
-    """Применяет решение к заказу и возвращает короткий ответ для кнопки."""
+def apply_press(order_id: str, decision: str, head_returned: str = "") -> str:
+    """Применяет решение к заказу и возвращает короткий ответ для кнопки.
+
+    Корень, вернувшийся с карточкой, сверяется с тем, что записан в очереди.
+    Расхождение означает, что решение относится не к тому состоянию журнала,
+    которое человек видел, — и это отказ, а не предупреждение.
+    """
     from ..orders import confirm, get
 
     order = get(order_id)
     if not order.pending:
         return "Уже решено"
+    expected = order.pending.get("head_seen", "")
+    if head_returned and expected and head_returned != expected:
+        return "Отклонено: журнал изменился с момента карточки"
     confirm(order, decision == "ok",
             "" if decision == "ok" else "возвращено из Telegram")
     return "Подтверждено" if decision == "ok" else "Возвращено"
@@ -177,9 +204,9 @@ def run(bot: Telegram, once: bool = False, pause: float = 1.0) -> None:
             press = parse_press(update, bot.chat_id)
             if not press:
                 continue
-            order_id, decision, callback_id = press
+            order_id, decision, callback_id, head_returned = press
             try:
-                answer = apply_press(order_id, decision)
+                answer = apply_press(order_id, decision, head_returned)
             except KeyError:
                 answer = "Заказ не найден"
             if callback_id:

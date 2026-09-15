@@ -147,11 +147,16 @@ def test_journal_resolver_notes_anchors_without_signature():
     assert any("без подписи" in line for line in answer.evidence)
 
 
-def test_journal_resolver_closes_when_a_head_was_named_to_a_person():
-    """Названный человеку корень — свидетель за пределами процесса-писателя."""
+def test_journal_resolver_never_closes_itself_on_its_own_evidence():
+    """Пункт не закрывается перечнем, взятым из проверяемого же файла.
+
+    Корни, названные человеку, — это шаг вперёд, но перечислять их изнутри
+    журнала значит проверять только то, в чём файл сам признаётся.
+    """
     worked_order()
     answer = survey.journal_intact(cl.Check(id="8.2", title=""))
-    assert answer.state == cl.CLOSED
+    assert answer.state == cl.NEEDS_HUMAN
+    assert "снаружи" in answer.summary
     assert any("названных человеку" in line for line in answer.evidence)
 
 

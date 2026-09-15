@@ -430,3 +430,89 @@ def test_panel_confirmation_also_records_a_witness():
     orders.confirm(order, True)
     seen = witnessed_heads(Journal(orders.journal_path()))
     assert seen and seen[-1]["ref"] == "панель"
+
+
+def test_cutting_through_every_confirmation_defeats_the_inside_out_check():
+    """Проверка от журнала наружу проверяет лишь то, в чём файл сам признаётся.
+
+    Обрезав историю по последнее подтверждение, получаем хвост без свидетелей:
+    проверять становится нечего, и обе внутренние проверки зелёные.
+    """
+    from kepil.journal import Journal, verify_chain, verify_witnesses
+    from kepil.journal.chain import JournalEntry
+
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    while True:
+        current = orders.get(order.id)
+        if current.pending:
+            orders.confirm(current, True)
+            continue
+        if orders.run_next(orders.get(order.id)) is None:
+            break
+
+    path = orders.journal_path()
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    last_confirmation = max(i for i, r in enumerate(rows)
+                            if (r.get("human") or {}).get("head_seen"))
+    kept = rows[last_confirmation + 1:]
+
+    path.write_text("", encoding="utf-8")
+    rebuilt = Journal(path)
+    for record in kept:
+        rebuilt.append(JournalEntry(
+            agent_id=record["agent_id"], action=record["action"],
+            decision=record["decision"], order_id=record.get("order_id"),
+            mandate_id=record.get("mandate_id"), step=record.get("step"),
+            human=record.get("human"), cost_kzt=record.get("cost_kzt", 0.0),
+            ts=record["ts"]))
+
+    fresh = Journal(path)
+    assert verify_chain(fresh)[0], "цепочка хвоста сходится сама с собой"
+    assert verify_witnesses(fresh)[0], (
+        "внутренняя проверка не видит удаления: свидетелей в хвосте не осталось")
+
+
+def test_enumeration_from_outside_catches_what_the_file_hides():
+    """Перечень карточек, составленный снаружи, переживает удаление записей."""
+    from kepil.journal import Journal, verify_against_sent
+    from kepil.journal.chain import JournalEntry
+
+    order = orders.create("leads", {"name": "ТОО «Пример»", "bin": "987654321098"})
+    sent: list[dict] = []
+    while True:
+        current = orders.get(order.id)
+        if current.pending:
+            sent.append({"at": "2026-09-15T10:00:00", "ref": "внешний канал",
+                         "head": current.pending["head_seen"]})
+            orders.confirm(current, True)
+            continue
+        if orders.run_next(orders.get(order.id)) is None:
+            break
+
+    path = orders.journal_path()
+    assert verify_against_sent(Journal(path), sent)[0], "до подделки всё сходится"
+
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    kept = rows[max(i for i, r in enumerate(rows)
+                    if (r.get("human") or {}).get("head_seen")) + 1:]
+    path.write_text("", encoding="utf-8")
+    rebuilt = Journal(path)
+    for record in kept:
+        rebuilt.append(JournalEntry(
+            agent_id=record["agent_id"], action=record["action"],
+            decision=record["decision"], order_id=record.get("order_id"),
+            mandate_id=record.get("mandate_id"), step=record.get("step"),
+            human=record.get("human"), cost_kzt=record.get("cost_kzt", 0.0),
+            ts=record["ts"]))
+
+    ok, problem = verify_against_sent(Journal(path), sent)
+    assert not ok, "перечень снаружи обязан заметить пропавшие записи"
+    assert "которого в журнале нет" in problem
+
+
+def test_empty_enumeration_is_not_a_pass():
+    """Пустой перечень — это отсутствие доказательства, а не доказательство."""
+    from kepil.journal import Journal, verify_against_sent
+    order_until_stop()
+    ok, problem = verify_against_sent(Journal(orders.journal_path()), [])
+    assert not ok and "пуст" in problem
