@@ -1,7 +1,7 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.oleg-vdv/kepil",
-  "description": "Accountability layer for AI agents: passport, mandate, action gateway and a tamper-evident journal. Confirmation of irreversible actions is deliberately not exposed as a tool.",
+  "description": "Passport, mandate, fail-closed action gate and tamper-evident journal for AI agents.",
   "version": "0.3.1",
   "repository": {
     "url": "https://github.com/oleg-vdv/kepil",

@@ -1,5 +1,7 @@
 # Kepil
 
+<!-- mcp-name: io.github.oleg-vdv/kepil -->
+
 [![PyPI](https://img.shields.io/pypi/v/kepil?color=1F5C4E)](https://pypi.org/project/kepil/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-1F5C4E)](LICENSE)
 
