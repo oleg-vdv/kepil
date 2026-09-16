@@ -515,4 +515,7 @@ def test_empty_enumeration_is_not_a_pass():
     from kepil.journal import Journal, verify_against_sent
     order_until_stop()
     ok, problem = verify_against_sent(Journal(orders.journal_path()), [])
-    assert not ok and "пуст" in problem
+    assert not ok
+    assert "внешних карточек нет" in problem
+    assert "не признак удаления" in problem, (
+        "свежая установка не должна выглядеть как подделка")

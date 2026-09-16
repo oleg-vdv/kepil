@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -35,6 +37,16 @@ def settings() -> dict[str, str]:
         "telegram_token": stored.get("telegram_token", ""),
         "telegram_chat_id": stored.get("telegram_chat_id", ""),
         "api_token": stored.get("api_token", ""),
+        # Зеркало пути отправки: копия карточки на адрес, читать который
+        # писатель журнала не управляет (см. kepil.mirror).
+        "mirror_host": stored.get("mirror_host", ""),
+        "mirror_port": stored.get("mirror_port", "587"),
+        "mirror_user": stored.get("mirror_user", ""),
+        # Пароль лучше держать в окружении, а не в файле рядом с журналом.
+        "mirror_password": (os.environ.get("KEPIL_MIRROR_PASSWORD")
+                            or stored.get("mirror_password", "")),
+        "mirror_from": stored.get("mirror_from", ""),
+        "mirror_to": stored.get("mirror_to", ""),
     }
 
 

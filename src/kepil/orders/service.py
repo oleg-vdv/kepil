@@ -212,8 +212,47 @@ def run_next(order: Order) -> tuple[Decision, str] | None:
 
 
 def _call_human(order: "Order") -> None:
-    """Зовёт оператора в настроенный канал. Молча, если канал не настроен."""
-    from .. import notify
+    """Зовёт оператора и записывает копию карточки во внешнее зеркало.
+
+    Два вызова с противоположными правилами, и разница здесь существенная.
+
+    Уведомление может не дойти, и заказ обязан это пережить: его задача —
+    дотянуться до человека, карточка всё равно ждёт в панели.
+
+    Зеркало производит доказательство. Его задача — оставить копию там, где
+    писатель журнала не сможет её править, и где проверяющий сможет перечислить
+    всё отправленное целиком, включая карточки, на которые никто не ответил.
+    Пропущенная копия не видна ни в журнале, ни в самом зеркале, то есть потеря
+    просто сдвигается на шаг наружу и снова становится тихой. Поэтому сбой
+    зеркала останавливает заказ.
+    """
+    from .. import mirror, notify
+
+    if mirror.configured():
+        try:
+            mirror.send_copy(
+                order.pending.get("head_seen", ""),
+                f"{order.id}:{order.pending.get('step', '')}",
+                "\n".join([
+                    f"Заказ {order.id} · {order.client.get('name', '')}",
+                    f"Шаг: {order.pending.get('title', '')}",
+                    f"Действие: {order.pending.get('action', '')}",
+                ]))
+        except Exception as exc:
+            order.status = "stopped"
+            order.save()
+            Journal(journal_path()).append(JournalEntry(
+                agent_id=order.agent_id, order_id=order.id,
+                mandate_id=order.mandate["mandate_id"],
+                step=f"{order.pending.get('step', '')}:mirror",
+                action={"type": "stop:order", "target": None,
+                        "reason": "внешняя копия карточки не записана"},
+                decision="deny",
+                human={"required": True, "approved": False,
+                       "confirmed_by": "система",
+                       "note": f"зеркало недоступно: {exc}",
+                       "at": datetime.now().isoformat(timespec="seconds")}))
+            return
 
     try:
         notify.on_pending(order)
