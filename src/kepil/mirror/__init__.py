@@ -26,9 +26,10 @@ from __future__ import annotations
 from typing import Any
 
 from .mail import MailMirror, MirrorError, enumerate_cards
+from .receipt import as_sent_card, describe, read_receipt
 
 __all__ = ["MailMirror", "MirrorError", "enumerate_cards", "configured", "mirror",
-           "send_copy"]
+           "send_copy", "read_receipt", "describe", "as_sent_card"]
 
 
 def _settings() -> dict[str, str]:
