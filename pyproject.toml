@@ -1,12 +1,12 @@
 [project]
 name = "kepil"
-version = "0.3.1"
+version = "0.3.2"
 description = "Accountability layer for AI agents: passport, mandate, action gateway, tamper-evident journal"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
-authors = [{ name = "Oleg Vdovenko" }]
+authors = [{ name = "Oleg Vdovin" }]
 keywords = ["ai-agents", "governance", "audit-log", "compliance", "agent-identity"]
 classifiers = [
   "Development Status :: 3 - Alpha",
