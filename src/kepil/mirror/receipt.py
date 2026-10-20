@@ -26,6 +26,15 @@ DKIM, ключ для проверки лежит в DNS домена — в м�
 подписи не делается и делается не здесь — для неё нужен ключ из DNS и разбор
 RSA. Модуль говорит, что именно осталось непроверенным, вместо того чтобы
 молча выдать «подтверждено».
+
+Две оговорки из RFC 6376, на которых покрытие легко переоценить.
+Подписывается **последний** экземпляр заголовка (5.4.2), поэтому корень
+читается с конца: посредник может дописать второй `X-Kepil-Head` сверху, и
+подпись сойдётся, а `message[...]` вернёт неподписанный. Чтобы дописанный
+экземпляр ломал подпись, а не прятался под ней, имя должно стоять в `h=`
+на раз больше, чем встречается в письме (oversigning). И тег `l=` (8.2):
+он ограничивает хеш тела префиксом, всё дописанное после проходит проверку.
+Непокрытый хвост считается без криптографии — его и называем.
 """
 
 from __future__ import annotations
@@ -50,13 +59,16 @@ def read_receipt(raw: bytes | str) -> dict[str, Any]:
         raw if isinstance(raw, bytes) else raw.encode("utf-8"),
         policy=email.policy.default)
 
-    head = (message.get(HEAD_HEADER) or "").strip()
+    # DKIM подписывает последний экземпляр (RFC 6376, 5.4.2) — его и читаем.
+    instances = [str(v).strip() for v in message.get_all(HEAD_HEADER) or []]
+    head = instances[-1] if instances else ""
     if not head:
         body = _plain_text(message)
         found = HEAD_RE.search(body)
         head = found.group(0) if found else ""
 
     dkim = _dkim(message)
+    signed = dkim["headers"].count(HEAD_HEADER.lower())
     return {
         "head": head,
         "ref": (message.get(REF_HEADER) or "").strip() or "—",
@@ -64,7 +76,11 @@ def read_receipt(raw: bytes | str) -> dict[str, Any]:
         "message_id": (message.get("Message-ID") or "").strip(),
         "from": (message.get("From") or "").strip(),
         "signature": dkim,
-        "covers_head": dkim["present"] and HEAD_HEADER.lower() in dkim["headers"],
+        "covers_head": dkim["present"] and signed > 0,
+        "head_instances": len(instances),
+        # имя в h= на раз больше, чем в письме: дописанный экземпляр ломает подпись
+        "oversigned": dkim["present"] and signed > len(instances),
+        "uncovered_body_bytes": _uncovered_body(raw, dkim),
         "verified": False,          # проверка подписи здесь не производится
     }
 
@@ -83,9 +99,22 @@ def describe(receipt: dict[str, Any]) -> str:
         return (f"подпись домена {signature['domain'] or '?'} есть, но заголовок "
                 f"{HEAD_HEADER} в неё не входит: подписано письмо, а не корень. "
                 f"Добавьте заголовок в список подписываемых на почтовом сервере")
-    return (f"корень назван и входит в подпись домена {signature['domain']} "
+    notes = []
+    if receipt["head_instances"] > 1:
+        notes.append(f"экземпляров {HEAD_HEADER} в письме: "
+                     f"{receipt['head_instances']}; подписан только "
+                     f"последний, он и взят")
+    if not receipt["oversigned"]:
+        notes.append(f"{HEAD_HEADER} не подписан с запасом: дописанный сверху "
+                     f"экземпляр подпись не сломает. Укажите имя в h= на раз "
+                     f"больше, чем оно встречается")
+    if receipt["uncovered_body_bytes"]:
+        notes.append(f"подпись ограничена тегом l=: последние "
+                     f"{receipt['uncovered_body_bytes']} байт тела ею не покрыты")
+    text = (f"корень назван и входит в подпись домена {signature['domain']} "
             f"(селектор {signature['selector'] or '?'}). Саму подпись здесь не "
             f"сверяли: для этого нужен открытый ключ из DNS этого домена")
+    return text + "".join(f". {n}" for n in notes)
 
 
 def as_sent_card(receipt: dict[str, Any]) -> dict[str, Any]:
@@ -108,7 +137,36 @@ def _dkim(message: Any) -> dict[str, Any]:
         "selector": tags.get("s", ""),
         "algorithm": tags.get("a", ""),
         "headers": [h.strip().lower() for h in tags.get("h", "").split(":") if h.strip()],
+        "body_length": int(tags["l"]) if tags.get("l", "").isdigit() else None,
+        "canonicalization": tags.get("c", "simple/simple"),
     }
+
+
+def _uncovered_body(raw: bytes | str, dkim: dict[str, Any]) -> int:
+    """Сколько байт канонизированного тела лежит за пределом l=.
+
+    Ноль, если тега нет: тогда хеш покрывает тело целиком.
+    """
+    limit = dkim.get("body_length")
+    if limit is None:
+        return 0
+    data = raw if isinstance(raw, bytes) else raw.encode("utf-8")
+    data = data.replace(b"\r\n", b"\n")
+    body = data.split(b"\n\n", 1)[1] if b"\n\n" in data else b""
+    relaxed = dkim["canonicalization"].partition("/")[2] == "relaxed"
+    return max(0, len(_canonical_body(body, relaxed)) - limit)
+
+
+def _canonical_body(body: bytes, relaxed: bool) -> bytes:
+    """Канонизация тела по RFC 6376, 3.4.3 (simple) и 3.4.4 (relaxed)."""
+    lines = body.split(b"\n")
+    if relaxed:
+        lines = [re.sub(rb"[ \t]+", b" ", line).rstrip(b" \t") for line in lines]
+    while lines and lines[-1] == b"":
+        lines.pop()
+    if not lines:
+        return b"" if relaxed else b"\r\n"
+    return b"\r\n".join(lines) + b"\r\n"
 
 
 def _tags(raw: str) -> dict[str, str]:

@@ -91,3 +91,43 @@ def test_a_receipt_matching_the_journal_passes():
     ok, problem = verify_against_sent(Journal(orders.journal_path()),
                                       [as_sent_card(receipt)])
     assert ok, problem
+
+
+def test_prepended_head_does_not_replace_the_signed_one():
+    """DKIM подписывает последний экземпляр; дописанный сверху — не тот корень."""
+    forged = "sha256:" + "ff" * 32
+    raw = letter(dkim=SIGNED_WITH_HEAD).replace(
+        b"X-Kepil-Head:", f"X-Kepil-Head: {forged}\nX-Kepil-Head:".encode(), 1)
+    receipt = read_receipt(raw)
+    assert receipt["head"] == HEAD
+    assert receipt["head_instances"] == 2
+    assert "подписан только последний" in describe(receipt)
+
+
+def test_head_signed_without_margin_is_called_out():
+    receipt = read_receipt(letter(dkim=SIGNED_WITH_HEAD))
+    assert receipt["oversigned"] is False
+    assert "не подписан с запасом" in describe(receipt)
+
+
+def test_oversigned_head_is_recognised():
+    receipt = read_receipt(letter(dkim=SIGNED_WITH_HEAD.replace(
+        "x-kepil-head", "x-kepil-head:x-kepil-head")))
+    assert receipt["oversigned"] is True
+    assert "с запасом" not in describe(receipt)
+
+
+def test_body_length_tag_names_the_uncovered_tail():
+    """l= ограничивает хеш тела: хвост за ним называется в байтах."""
+    body = "Требуется подтверждение"
+    covered = len((body + "\r\n").encode("utf-8"))
+    raw = letter(dkim=SIGNED_WITH_HEAD + f"; l={covered}",
+                 body=body + "\nДописано посредником")
+    receipt = read_receipt(raw)
+    tail = len("Дописано посредником\r\n".encode("utf-8"))
+    assert receipt["uncovered_body_bytes"] == tail
+    assert f"последние {tail} байт" in describe(receipt)
+
+
+def test_without_body_length_tag_the_whole_body_is_covered():
+    assert read_receipt(letter(dkim=SIGNED_WITH_HEAD))["uncovered_body_bytes"] == 0

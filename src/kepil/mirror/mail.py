@@ -116,8 +116,9 @@ def enumerate_cards(host: str, user: str, password: str,
 
 
 def _header(text: str, name: str) -> str:
-    found = re.search(rf"^{re.escape(name)}:\s*(.+)$", text, re.M | re.I)
-    return found.group(1).strip() if found else ""
+    # последний экземпляр — тот, что покрывает DKIM (RFC 6376, 5.4.2)
+    found = re.findall(rf"^{re.escape(name)}:\s*(.+)$", text, re.M | re.I)
+    return found[-1].strip() if found else ""
 
 
 def _first_head(text: str) -> str:

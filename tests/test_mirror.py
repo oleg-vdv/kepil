@@ -167,3 +167,11 @@ def test_enumeration_feeds_the_outside_in_check():
     cards = enumerate_cards("imap.local", "auditor", "pw", opener=lambda: box)
     ok, problem = verify_against_sent(Journal(orders.journal_path()), cards)
     assert not ok and "которого в журнале нет" in problem
+
+
+def test_mailbox_reader_takes_the_last_head_instance():
+    """Как и DKIM: дописанный сверху экземпляр не подменяет подписанный."""
+    from kepil.mirror.mail import _header
+    text = ("X-Kepil-Head: sha256:" + "ff" * 32 + "\n"
+            "X-Kepil-Head: sha256:" + "aa" * 32 + "\n")
+    assert _header(text, "X-Kepil-Head") == "sha256:" + "aa" * 32
