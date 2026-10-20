@@ -35,6 +35,8 @@ RSA. Модуль говорит, что именно осталось непр�
 на раз больше, чем встречается в письме (oversigning). И тег `l=` (8.2):
 он ограничивает хеш тела префиксом, всё дописанное после проходит проверку.
 Непокрытый хвост считается без криптографии — его и называем.
+Подписей бывает несколько: свою добавляет любой узел на пути. Расписка
+опирается на подпись домена отправителя, а чужую называет чужой.
 """
 
 from __future__ import annotations
@@ -67,15 +69,18 @@ def read_receipt(raw: bytes | str) -> dict[str, Any]:
         found = HEAD_RE.search(body)
         head = found.group(0) if found else ""
 
-    dkim = _dkim(message)
+    sender = (message.get("From") or "").strip()
+    signatures = _signatures(message)
+    dkim = _choose(signatures, sender, len(instances))
     signed = dkim["headers"].count(HEAD_HEADER.lower())
     return {
         "head": head,
         "ref": (message.get(REF_HEADER) or "").strip() or "—",
         "at": (message.get("Date") or "").strip(),
         "message_id": (message.get("Message-ID") or "").strip(),
-        "from": (message.get("From") or "").strip(),
+        "from": sender,
         "signature": dkim,
+        "signatures": len(signatures),
         "covers_head": dkim["present"] and signed > 0,
         "head_instances": len(instances),
         # имя в h= на раз больше, чем в письме: дописанный экземпляр ломает подпись
@@ -100,6 +105,15 @@ def describe(receipt: dict[str, Any]) -> str:
                 f"{HEAD_HEADER} в неё не входит: подписано письмо, а не корень. "
                 f"Добавьте заголовок в список подписываемых на почтовом сервере")
     notes = []
+    if not signature["aligned"]:
+        notes.append(f"домен подписи {signature['domain'] or '?'} не совпадает "
+                     f"с доменом отправителя: подпись доказывает, что письмо "
+                     f"прошло через этот домен, а не что карточку выдал "
+                     f"отправитель")
+    if receipt["signatures"] > 1:
+        notes.append(f"подписей в письме: {receipt['signatures']}; взята "
+                     f"подпись домена {signature['domain']}"
+                     + (", домена отправителя" if signature["aligned"] else ""))
     if receipt["head_instances"] > 1:
         notes.append(f"экземпляров {HEAD_HEADER} в письме: "
                      f"{receipt['head_instances']}; подписан только "
@@ -125,12 +139,45 @@ def as_sent_card(receipt: dict[str, Any]) -> dict[str, Any]:
 
 # --- разбор подписи ---------------------------------------------------------
 
-def _dkim(message: Any) -> dict[str, Any]:
-    raw = message.get("DKIM-Signature")
-    if not raw:
+def _signatures(message: Any) -> list[dict[str, Any]]:
+    return [_dkim(str(raw)) for raw in message.get_all("DKIM-Signature") or []]
+
+
+def _choose(signatures: list[dict[str, Any]], sender: str,
+            instances: int) -> dict[str, Any]:
+    """Подпись, на которую опирается расписка, когда их несколько.
+
+    Подпись добавить может любой узел на пути — рассылка, пересылающий
+    сервер, сам посредник со своим доменом. Его подпись над дописанным
+    корнем сойдётся и ничего не докажет о карточке. Поэтому сначала берутся
+    подписи домена отправителя (совпадение d= с доменом From или его
+    родителем, как relaxed-выравнивание в DMARC), и только среди них —
+    лучшая по покрытию: корень подписан, подписан с запасом, без l=.
+    """
+    if not signatures:
         return {"present": False, "domain": "", "selector": "", "headers": [],
-                "algorithm": ""}
-    tags = _tags(str(raw))
+                "algorithm": "", "body_length": None,
+                "canonicalization": "simple/simple", "aligned": False}
+    for signature in signatures:
+        signature["aligned"] = _aligned(signature["domain"], sender)
+    pool = [s for s in signatures if s["aligned"]] or signatures
+
+    def strength(signature: dict[str, Any]) -> tuple[bool, bool, bool]:
+        signed = signature["headers"].count(HEAD_HEADER.lower())
+        return (signed > 0, signed > instances, signature["body_length"] is None)
+
+    return max(pool, key=strength)
+
+
+def _aligned(domain: str, sender: str) -> bool:
+    author = sender.rpartition("@")[2].strip(" >").lower()
+    domain = domain.lower().strip(".")
+    return bool(domain and author) and (author == domain
+                                        or author.endswith("." + domain))
+
+
+def _dkim(raw: str) -> dict[str, Any]:
+    tags = _tags(raw)
     return {
         "present": True,
         "domain": tags.get("d", ""),

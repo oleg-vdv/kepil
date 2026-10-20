@@ -226,7 +226,7 @@ order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
 
 ## Status
 
-Alpha, 176 tests. Interfaces may still change. Nothing here is a legal opinion:
+Alpha, 180 tests. Interfaces may still change. Nothing here is a legal opinion:
 before relying on generated documents, have them reviewed by a lawyer in your
 jurisdiction.
 

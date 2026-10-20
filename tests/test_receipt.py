@@ -131,3 +131,39 @@ def test_body_length_tag_names_the_uncovered_tail():
 
 def test_without_body_length_tag_the_whole_body_is_covered():
     assert read_receipt(letter(dkim=SIGNED_WITH_HEAD))["uncovered_body_bytes"] == 0
+
+
+RELAY_OVERSIGNED = ("v=1; a=rsa-sha256; d=relay.example; s=r; "
+                    "h=from:x-kepil-head:x-kepil-head; b=BBBB")
+
+
+def with_signatures(*signatures):
+    raw = letter()
+    extra = "".join(f"DKIM-Signature: {s}\n" for s in signatures).encode()
+    return extra + raw
+
+
+def test_sender_signature_wins_over_a_stronger_foreign_one():
+    """Подпись посредника над корнем ничего не говорит о карточке."""
+    receipt = read_receipt(with_signatures(RELAY_OVERSIGNED, SIGNED_WITH_HEAD))
+    assert receipt["signatures"] == 2
+    assert receipt["signature"]["domain"] == "kepil.kz"
+    assert receipt["signature"]["aligned"] is True
+    assert "взята подпись домена kepil.kz, домена отправителя" in describe(receipt)
+
+
+def test_foreign_signature_alone_is_called_foreign():
+    receipt = read_receipt(with_signatures(RELAY_OVERSIGNED))
+    assert receipt["covers_head"] is True
+    assert receipt["signature"]["aligned"] is False
+    assert "не совпадает с доменом отправителя" in describe(receipt)
+
+
+def test_among_sender_signatures_the_one_covering_the_head_is_taken():
+    receipt = read_receipt(with_signatures(SIGNED_WITHOUT_HEAD, SIGNED_WITH_HEAD))
+    assert receipt["covers_head"] is True
+
+
+def test_parent_domain_signature_is_aligned():
+    raw = letter(dkim=SIGNED_WITH_HEAD).replace(b"bot@kepil.kz", b"bot@mail.kepil.kz")
+    assert read_receipt(raw)["signature"]["aligned"] is True
