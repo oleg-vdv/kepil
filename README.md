@@ -57,6 +57,15 @@ puts it back.
 two buttons — approve or return — so being accountable does not mean sitting at
 a laptop.
 
+**An unanswered card does not go quiet.** Blocking the action protects the
+action, not the reader: a card nobody opened looks exactly like one sent a
+minute ago. So waiting has a deadline (4 hours by default). An overdue card
+arrives again, with the same buttons and how long it has waited, and is marked in the
+panel. It can be put off, but only with a reason and an end time of at most 72
+hours. The snooze is written to the journal as a human decision, and when it
+runs out the card comes back. Snoozing is not available over MCP: an
+agent cannot silence its own card.
+
 ## Use it from any MCP client
 
 Kepil ships an MCP server, so an editor, an assistant or another agent can work
@@ -226,7 +235,7 @@ order No. 95/НҚ — are dropped into `$KEPIL_DATA/packs` as files.
 
 ## Status
 
-Alpha, 180 tests. Interfaces may still change. Nothing here is a legal opinion:
+Alpha, 191 tests. Interfaces may still change. Nothing here is a legal opinion:
 before relying on generated documents, have them reviewed by a lawyer in your
 jurisdiction.
 

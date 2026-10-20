@@ -37,6 +37,8 @@ def settings() -> dict[str, str]:
         "telegram_token": stored.get("telegram_token", ""),
         "telegram_chat_id": stored.get("telegram_chat_id", ""),
         "api_token": stored.get("api_token", ""),
+        # Сколько часов карточка ждёт, прежде чем подняться снова.
+        "pending_wait_hours": stored.get("pending_wait_hours", "4"),
         # Зеркало пути отправки: копия карточки на адрес, читать который
         # писатель журнала не управляет (см. kepil.mirror).
         "mirror_host": stored.get("mirror_host", ""),

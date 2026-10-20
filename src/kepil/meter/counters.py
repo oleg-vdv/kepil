@@ -59,6 +59,8 @@ class Counters:
         return self.allowed / self.actions if self.actions else 0.0
 
     def add_record(self, record: dict[str, Any]) -> None:
+        if (record.get("human") or {}).get("kind") == "snooze":
+            return  # отложенная карточка — не действие и не решение
         self.actions += 1
         decision = record.get("decision")
         if decision == "allow":

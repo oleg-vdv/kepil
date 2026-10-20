@@ -75,7 +75,8 @@ class Telegram:
         return me.get("username", "бот")
 
     def ask_confirmation(self, order: Any, pending: dict[str, Any],
-                         rollback: str | None, head: str = "") -> dict[str, Any]:
+                         rollback: str | None, head: str = "", waited: str = "",
+                         snooze_reason: str = "") -> dict[str, Any]:
         """Карточка действия с кнопками «Подтвердить» и «Вернуть».
 
         На карточке стоит текущий корень цепочки. Это единственный артефакт,
@@ -89,9 +90,12 @@ class Telegram:
         """
         client = order.client.get("name", "клиент")
         undo = rollback or "откат невозможен — действие необратимо"
-        lines = [
-            f"Требуется подтверждение · заказ {order.id}",
-            "",
+        title = (f"Ждёт решения {waited} · заказ {order.id}" if waited
+                 else f"Требуется подтверждение · заказ {order.id}")
+        lines = [title, ""]
+        if snooze_reason:
+            lines += [f"Было отложено: {snooze_reason}. Срок вышел.", ""]
+        lines += [
             f"Клиент: {client}",
             f"Шаг: {pending['title']}",
             f"Действие: {pending['action']}",
@@ -187,10 +191,26 @@ def apply_press(order_id: str, decision: str, head_returned: str = "") -> str:
     return "Подтверждено" if decision == "ok" else "Возвращено"
 
 
+REMIND_EVERY = 60.0  # секунд между проверками просроченных карточек
+
+
 def run(bot: Telegram, once: bool = False, pause: float = 1.0) -> None:
-    """Цикл ожидания нажатий. Живёт рядом с панелью и переживает обрывы связи."""
+    """Цикл ожидания нажатий. Живёт рядом с панелью и переживает обрывы связи.
+
+    Он же раз в минуту поднимает просроченные карточки: это единственный
+    процесс, который живёт долго и уже держит канал.
+    """
+    from ..orders.overdue import remind_overdue
+
     offset: int | None = None
+    checked = 0.0
     while True:
+        if time.monotonic() - checked >= REMIND_EVERY:
+            checked = time.monotonic()
+            try:
+                remind_overdue(client=bot)
+            except Exception:  # напоминание не должно ронять приём нажатий
+                pass
         try:
             batch = bot.updates(offset)
         except TelegramError:

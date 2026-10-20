@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from ..orders import overdue
 from ..orders.service import STATUSES
 from ..professions.base import Profession
 from ..professions.definition import ProfessionDefinition
@@ -75,8 +76,12 @@ def overview(orders, professions, agents, journal_state, due) -> str:
     entries = sum(1 for _ in _iter_journal())
     attention = []
     for order in awaiting:
+        late = overdue.is_overdue(order)
+        head = (f'<h3 style="color:var(--deny)">Просрочено · ждёт '
+                f'{e(overdue.waited(order))}</h3>' if late
+                else '<h3>Ждёт подтверждения</h3>')
         attention.append(
-            f'<div class="card"><h3>Ждёт подтверждения</h3>'
+            f'<div class="card">{head}'
             f'<p>{e(order.pending["title"])} · заказ {e(order.id)} · '
             f'{e(order.client.get("name", ""))}</p>'
             f'<a href="/orders/{e(order.id)}">Открыть заказ →</a></div>')
@@ -188,6 +193,7 @@ def order_page(order, definition, journal_rows, message: str = "") -> str:
               <button name="approve" value="0">Вернуть</button>
             </div>
           </form>
+          {_snooze_block(order)}
         </div>"""
     else:
         done = order.cursor >= len(definition.steps)
@@ -599,6 +605,36 @@ def journal_page(records, state, entries, anchors="") -> str:
 """
 
 
+def _snooze_block(order) -> str:
+    """Срок ожидания карточки и откладывание — только с причиной и до часа."""
+    pending = order.pending
+    due = overdue.due_at(order)
+    if pending.get("snoozed_until"):
+        state = (f'Отложено до {e(pending["snoozed_until"].replace("T", " "))}: '
+                 f'{e(pending.get("snooze_reason", ""))}')
+    elif overdue.is_overdue(order):
+        state = (f'<b style="color:var(--deny)">Просрочено</b>: ждёт '
+                 f'{e(overdue.waited(order))}')
+    else:
+        state = (f'Ждёт {e(overdue.waited(order))}; поднимется снова '
+                 f'{e(due.isoformat(timespec="minutes").replace("T", " ")) if due else "—"}')
+    reminders = pending.get("reminders")
+    if reminders:
+        state += f' · напоминаний: {int(reminders)}'
+    return f"""
+          <p class="lede">{state}</p>
+          <form method="post" action="/orders/{e(order.id)}/snooze">
+            <label>Отложить — причина обязательна, запись уйдёт в журнал</label>
+            <div class="cols">
+              <div><input type="text" name="reason" required
+                          placeholder="почему решение подождёт"></div>
+              <div><input type="number" name="hours" min="1"
+                          max="{overdue.MAX_SNOOZE_HOURS}" value="24" required></div>
+            </div>
+            <div class="row"><button>Отложить на столько часов</button></div>
+          </form>"""
+
+
 def settings_page(org, data_path) -> str:
     return f"""
 <h1>Настройки</h1>
@@ -625,6 +661,10 @@ def settings_page(org, data_path) -> str:
         <span class="hint">узнать у @userinfobot: он пришлёт Id</span></label>
       <input type="text" name="telegram_chat_id" value="{e(org.get("telegram_chat_id", ""))}"
              placeholder="123456789"></div>
+    <div><label>Срок ожидания, ч
+        <span class="hint">неотвеченная карточка придёт снова через столько часов</span></label>
+      <input type="number" name="pending_wait_hours" min="1"
+             value="{e(org.get("pending_wait_hours", "4"))}"></div>
   </div>
   <h2>Программный доступ</h2>
   <p class="lede">Нужен, чтобы Kepil спрашивали автоматизации — n8n, Make,

@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from .. import compliance, meter, notify
 from ..journal import Journal, anchor, anchors
+from ..orders import overdue
 from ..orders import service as orders
 from ..professions import definition as professions
 from ..registry import store as agents
@@ -104,6 +105,21 @@ def order_step(request: Request) -> Response:
 def order_confirm(request: Request) -> Response:
     order = orders.get(request.query["id"])
     orders.confirm(order, request.form("approve") == "1", request.form("note"))
+    return Response(redirect=f"/orders/{order.id}")
+
+
+def order_snooze(request: Request) -> Response:
+    order = orders.get(request.query["id"])
+    try:
+        hours = float(request.form("hours") or 0)
+        overdue.snooze(order, request.form("reason"), hours)
+    except ValueError as exc:
+        records = [r for r in Journal(orders.journal_path())
+                   if r.get("order_id") == order.id]
+        return page(f"Заказ {order.id}", "orders",
+                    views.order_page(order, order.definition(),
+                                     views.journal_table(records)),
+                    ("err", str(exc)))
     return Response(redirect=f"/orders/{order.id}")
 
 
@@ -418,6 +434,7 @@ def settings_save(request: Request) -> Response:
         "telegram_token": request.form("telegram_token"),
         "telegram_chat_id": request.form("telegram_chat_id"),
         "api_token": request.form("api_token"),
+        "pending_wait_hours": request.form("pending_wait_hours") or "4",
     })
     return Response(redirect="/settings")
 
@@ -443,6 +460,7 @@ ROUTES: list[tuple[str, str, Handler]] = [
     ("GET", "/orders/<id>", order_view),
     ("POST", "/orders/<id>/step", order_step),
     ("POST", "/orders/<id>/confirm", order_confirm),
+    ("POST", "/orders/<id>/snooze", order_snooze),
     ("POST", "/orders/<id>/reset", order_reset),
     ("POST", "/orders/<id>/stop", order_stop),
     ("POST", "/orders/<id>/resume", order_resume),

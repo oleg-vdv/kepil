@@ -103,7 +103,12 @@ def _pending() -> str:
         return "Ничего не ждёт подтверждения."
     return "\n".join(
         f"{o.id} · {o.client.get('name', '')} · {o.pending['title']} "
-        f"({o.pending['action']} → {o.pending.get('system') or '—'})" for o in waiting)
+        f"({o.pending['action']} → {o.pending.get('system') or '—'}) · "
+        f"ждёт {orders.waited(o)}"
+        + (" · ПРОСРОЧЕНО" if orders.is_overdue(o) else "")
+        + (f" · отложено: {o.pending['snooze_reason']}"
+           if o.pending.get("snooze_reason") else "")
+        for o in waiting)
 
 
 def _verify_journal() -> str:
