@@ -86,6 +86,25 @@ def test_serve_reads_lines_and_writes_answers():
     assert any(t["name"] == "create_order" for t in answer["result"]["tools"])
 
 
+def test_stdio_is_utf8_whatever_the_console_encoding(tmp_path):
+    """MCP требует UTF-8. На Windows канал по умолчанию в cp1251 — клиент падает."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(server.__file__).resolve().parents[2]
+    env = {**os.environ, "PYTHONPATH": str(src), "KEPIL_DATA": str(tmp_path),
+           "PYTHONIOENCODING": "cp1251"}
+    request = {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+               "params": {"name": "проверка", "arguments": {}}}
+    done = subprocess.run([sys.executable, "-m", "kepil.mcp"], env=env,
+                          input=(json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"),
+                          capture_output=True, timeout=30)
+    answer = json.loads(done.stdout.decode("utf-8"))
+    assert "«проверка»" in answer["result"]["content"][0]["text"]
+
+
 def test_broken_line_does_not_kill_the_server():
     stdin = io.StringIO("не json\n" +
                         json.dumps({"jsonrpc": "2.0", "id": 2, "method": "ping"}) + "\n")
