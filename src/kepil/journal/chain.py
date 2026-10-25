@@ -19,24 +19,56 @@ GENESIS = "sha256:" + "0" * 64
 TZ_ALMATY = timezone(timedelta(hours=5))
 
 
-def _jcs_numbers(value: Any) -> Any:
-    """Приводит числа к форме, одинаковой в Python и JavaScript.
+def _es_number(value: float) -> str:
+    """Число в записи ECMAScript (Number::toString), как требует RFC 8785.
 
-    Python пишет float 0.0 как "0.0", JavaScript — как "0". Без нормализации
-    хеш одной и той же записи в двух реализациях не сойдётся, и внешний
-    верификатор (proofbyte-agent-trace) объявит целый журнал подделанным.
-    Приводим целые float к int — это подмножество RFC 8785 (JCS), достаточное
-    для наших записей.
+    Python пишет 0.0 как "0.0", а 5e-05 как "5e-05"; JavaScript — "0" и
+    "0.00005". Без одинаковой записи хеш одной и той же записи в двух
+    реализациях не сойдётся, и внешний верификатор (proofbyte-agent-trace)
+    объявит честный журнал подделанным. Цифры берём из repr: он, как и
+    JavaScript, даёт кратчайшее точное представление; меняется только
+    расстановка точки и экспоненты.
     """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError("NaN и бесконечность в журнал не пишутся")
+    if value == 0:
+        return "0"
+    sign = "-" if value < 0 else ""
+    mantissa, _, exp = repr(abs(value)).partition("e")
+    whole, _, frac = mantissa.partition(".")
+    raw = whole + frac
+    digits = raw.lstrip("0")
+    # значение = 0.digits × 10^n
+    n = len(whole) + int(exp or 0) - (len(raw) - len(digits))
+    digits = digits.rstrip("0")
+    k = len(digits)
+    if k <= n <= 21:
+        text = digits + "0" * (n - k)
+    elif 0 < n <= 21:
+        text = digits[:n] + "." + digits[n:]
+    elif -6 < n <= 0:
+        text = "0." + "0" * -n + digits
+    else:
+        e = n - 1
+        text = (digits[0] + ("." + digits[1:] if k > 1 else "")
+                + "e" + ("+" if e >= 0 else "-") + str(abs(e)))
+    return sign + text
+
+
+def _jcs(value: Any) -> str:
+    if value is None or isinstance(value, (bool, str)):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _es_number(value)
     if isinstance(value, dict):
-        return {k: _jcs_numbers(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_jcs_numbers(v) for v in value]
-    return value
+        return "{" + ",".join(
+            json.dumps(str(k), ensure_ascii=False) + ":" + _jcs(value[k])
+            for k in sorted(value)) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_jcs(v) for v in value) + "]"
+    raise TypeError(f"тип {type(value).__name__} не сериализуется в журнал")
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -45,9 +77,7 @@ def _canonical(payload: dict[str, Any]) -> bytes:
     Совместима с канонизацией на стороне JavaScript: сортировка ключей,
     отсутствие пробелов, юникод без экранирования, числа по правилам JCS.
     """
-    body = _jcs_numbers({k: v for k, v in payload.items() if k != "hash"})
-    return json.dumps(body, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
+    return _jcs({k: v for k, v in payload.items() if k != "hash"}).encode("utf-8")
 
 
 def entry_hash(payload: dict[str, Any]) -> str:
