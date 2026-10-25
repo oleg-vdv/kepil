@@ -218,6 +218,11 @@ def _text(text: str, error: bool = False) -> dict[str, Any]:
 
 
 def serve(stdin=None, stdout=None) -> None:
+    if stdin is None:
+        # MCP требует UTF-8, а на Windows канал по умолчанию в кодировке
+        # консоли (cp1251): клиент не может прочитать ответ и зависает.
+        sys.stdin.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     for line in stdin:
